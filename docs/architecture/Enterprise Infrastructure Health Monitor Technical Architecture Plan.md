@@ -1,19 +1,29 @@
 # Enterprise Infrastructure Health Monitor Dashboard
 ## Technical Architecture Plan
-Review edition 1.3 • 12 October 2026
+Review edition 1.5 • 14 October 2026
 
-Build a polished, demonstrable dashboard in seven to ten focused working days. Approve a modular monolith: one ASP.NET Core Web API, two independently owned domain modules, one Supabase PostgreSQL database, and a separate Vite React application. The frontend emphasizes responsive interaction, useful telemetry, and dependable table behavior; the backend demonstrates clean boundaries, explicit persistence ownership, and testable business rules.
+Build a polished, demonstrable dashboard through eleven implementation steps, advancing when each completion gate passes. No fixed calendar deadline or working-hour limit applies. Approve a modular monolith: one ASP.NET Core Web API, two independently owned domain modules, one Supabase PostgreSQL database, and a separate Vite React application. The frontend emphasizes responsive interaction, useful telemetry, and dependable table behavior; the backend demonstrates clean boundaries, explicit persistence ownership, and testable business rules.
 
-The intended implementer is an experienced C# and industrial telemetry developer. The project should show modern React and TypeScript capability without spending the schedule recreating an enterprise platform. This plan specifies architectural boundaries, conceptual models, public contracts, bootstrap commands, verification gates, and publication readiness. It deliberately leaves controllers, repository implementations, and React components to implementation.
+The intended implementer is an experienced C# and industrial telemetry developer. The project should show modern React and TypeScript capability without expanding the MVP into a full enterprise platform. This plan specifies architectural boundaries, conceptual models, public contracts, bootstrap commands, verification gates, and publication readiness. It deliberately leaves controllers, repository implementations, and React components to implementation.
+
+### Edition 1 5 amendments and implementation status
+Option A AI-generated structured queries is approved for the MVP and included in the eleven-step implementation roadmap. A user describes the desired device view in plain English; the model proposes a typed filter and sort object. The server validates it and the user applies it through the existing device-grid GET endpoint. EF Core and module query adapters remain responsible for database access. No free-form model SQL, new schema, third domain module, fifth production project, agent framework, or autonomous tool execution is introduced.
+
+This edition preserves sections 1–24, original models, bootstrap commands, persistence decisions, security controls, reference register, and the approved D11 AI feature introduced in edition 1.4. Edition 1.5 replaces the time-bound roadmap with eleven implementation steps and completion gates. Fixed day counts and working-hour budgets no longer govern delivery; scope and verification requirements remain. The original dependency baselines and their 12 October verification record are retained rather than represented as newly executed checks.
+
+**Step 2 implementation evidence.** Step 2 replaces the earlier Day 2 progress label; it is not a statement that every Step 2 completion gate has passed. The supplied 14 October startup code registers DeviceDbContext and TelemetryDbContext with separate configuration lookups and UseNpgsql calls, selects HealthMonitor.Infrastructure as the migrations assembly, registers controllers and native OpenAPI, and maps controllers after HTTPS redirection and authorization. Its context namespaces are Infrastructure.Data.DeviceContext and Infrastructure.Data.TelemetryContext. This is evidence of startup wiring only; it does not prove a successful database connection, schema deployment, seed, endpoint behavior, or tests.
+
+**Planned alignment after Step 2.** D03 still requires one DI-owned shared NpgsqlDataSource, separate per-schema migration histories, and the section 2 module folders. The shown startup code does not demonstrate those properties; reconcile the existing namespaces and registration without discarding working code. All AI components, contracts, policies, provider setup, UI, and AI tests below are proposed implementation work. No AI endpoint or provider integration is claimed complete.
 
 ### Approval recommendation
-Approve the MVP and decisions D01–D10. Treat service extraction, full identity management, streaming, device provisioning, and advanced analytics as future work. Public HTTP access is read-only. A small server-owned producer keeps the hosted synthetic fleet active; local simulation remains available for deterministic demonstrations. The simulator and UI clearly identify all data as synthetic.
+Retain the MVP and decisions D01–D10 and incorporate approved Option A as decision D11. Treat service extraction, full identity management, streaming, device provisioning, and advanced analytics as future work. Public HTTP access performs no application database writes; the proposed AI translation POST is a read-only operation that can incur model-provider usage. A small server-owned producer keeps the hosted synthetic fleet active; local simulation remains available for deterministic demonstrations. The simulator and UI clearly identify all data as synthetic.
 
 ### Delivery boundary
 The MVP contains a Metrics Summary, a TanStack Table data grid with server pagination and global filtering and sorting, and a Device Status Drawer with recent telemetry and incident history. It includes a controlled simulator, an internal periodic producer with bounded retention, cloud persistence, API documentation, focused tests, CI, screenshots, and a short demonstration video.
 
 ### Review navigation
 | Section | Review focus |
+| --- | --- |
 | 1–2 | Decisions, topology, project boundaries |
 | 3–6 | Windows bootstrap, frontend integration, secrets |
 | 7–10 | Domain models, schema ownership, consistency |
@@ -24,10 +34,11 @@ The MVP contains a Metrics Summary, a TanStack Table data grid with server pagin
 | 23 | Provisioning and bootstrap completion checklist |
 | 24 | Configuration files and reproducible validation commands |
 
-**Feasibility judgment.** Target ten working days and approximately 60–70 focused hours. Seven days is an accelerated delivery requiring roughly nine to ten focused hours daily, familiar hosting, and no stretch work. Resolve cloud access on day one and freeze functional scope by day seven. Enterprise-grade here means understandable code, secure configuration, deterministic behavior, and meaningful verification; it does not imply high availability or industrial monitoring certification.
+**Feasibility judgment.** Complete eleven implementation steps at the pace needed to satisfy their exit gates. A step can span multiple sessions; numbering expresses dependency and progress, not elapsed days. Resolve tooling and cloud access in Step 1, stabilize functional scope after Step 8, and complete verification before release in Step 11. Enterprise-grade here means understandable code, secure configuration, deterministic behavior, and meaningful verification; it does not imply high availability or industrial monitoring certification.
 
 # 1 Architecture decisions
 | Decision | Choice and reason |
+| --- | --- |
 | D01 | Modular monolith for the MVP. One process avoids deployment and messaging work while preserving domain seams. |
 | D02 | Four backend projects: Domain, Application, Infrastructure, and API. Device and Telemetry are separate folders and namespaces within each layer. Project references enforce layer boundaries; conventions, review, and architecture tests protect module boundaries. |
 | D03 | Two scoped DbContexts and two private schemas. The API composition root supplies one shared singleton NpgsqlDataSource for the identical runtime connection configuration. |
@@ -37,7 +48,8 @@ The MVP contains a Metrics Summary, a TanStack Table data grid with server pagin
 | D07 | Server pagination, filtering, and sorting operate over the same dataset. TanStack Table provides headless table behavior; the project supplies accessible grid markup and styling. |
 | D08 | TanStack Query v5 owns server cache; Zustand v5 owns shared UI preferences. Keep request data out of Zustand. |
 | D09 | Five-second polling with visible freshness for MVP. SignalR and event transport are stretch work. |
-| D10 | Public HTTP reads only; an internal producer maintains synthetic telemetry with bounded retention. No browser-held database credential or privileged Supabase key. |
+| D10 | Public HTTP operations perform no application database writes; an internal producer maintains synthetic telemetry with bounded retention. The AI translation POST is read-only with provider usage limits. No browser-held database credential or privileged Supabase key. |
+| D11 | Approved Option A translates natural language into an allowlisted structured device-grid query. Server validation and existing query ports control execution; model-generated SQL is never executed. Proposed for Steps 4–8, not implemented Step 2. |
 
 ### Runtime topology
 ```text
@@ -57,6 +69,18 @@ Supabase PostgreSQL
 The frontend uses only public DTOs and routes. Maintaining their semantics, status codes, query behavior, authentication requirements, and origin allows services to move behind the facade without changing React. Separate schema ownership and scalar identifiers allow tables to move to separate databases without redesigning the logical table structures. Repository abstractions alone do not provide these guarantees.
 
 Zero refactoring is conditional, not absolute. Extraction requires backend adapters, independent deployment, data movement, observability, authentication between services, and usually durable events or a replicated catalog. Cross-module read composition and failure behavior must be preserved. Physical schema placement, privileges, migration execution, and history locations may change. New product requirements or incompatible API changes can require frontend and logical schema changes; this design cannot guarantee otherwise.
+
+### Proposed AI orchestration path
+```text
+Plain English input -> API AI translation controller
+  -> Application AiQueries use case and validator
+  -> IStructuredQueryGenerator -> Infrastructure model adapter
+  <- untrusted structured proposal -> validated query DTO
+User reviews and applies -> GET /api/v1/devices with normal parameters
+  -> existing API fleet composition -> Device and Telemetry query ports
+  -> module owned projections -> existing filtering sorting and paging
+```
+Only the existing module query adapters access PostgreSQL. AI translates intent; it does not change health policy, incident lifecycle, retention, or consistency guarantees.
 
 # 2 Repository and project boundaries
 ```text
@@ -112,6 +136,13 @@ Repositories return aggregates, value records, or explicit paged results and acc
 
 The frontend .esproj is a sibling solution project located inside the independent frontend root. There is no API-to-esproj ProjectReference, SPA proxy package, or frontend build embedded in API publish. Visual Studio launches the two projects separately; CLI and CI build the two artifacts explicitly.
 
+### Proposed AI files and dependency boundaries
+Add API/Controllers/AiDeviceQueriesController.cs and API/Contracts/V1/AiQueries for public request and response DTOs; API/Composition wires the services. Add Application/AiQueries containing TranslateDeviceQuery, DeviceGridQuery, QueryTranslationResult, StructuredQueryValidator, and Ports/IStructuredQueryGenerator. Add Infrastructure/AiQueries containing one provider adapter and its provider transport DTOs. Add frontend/src/features/ai-query for the input, proposed-filter preview, Apply, and Clear actions. These are additions within the existing four production projects.
+
+Application defines the provider port using immutable records and CancellationToken, without provider SDK, HTTP, EF, SQL, or API DTO dependencies. Infrastructure implements it with a bounded HttpClient integration or one reviewed provider SDK. The API maps public DTOs and supplies a small, nonsecret query vocabulary from the seed configuration through an application contract. AiQueries never references module entities, DbContexts, repositories, or write use cases; applying the validated query uses the existing facade read composition. Domain contains no AI types. No cross-schema query shortcut is permitted.
+
+Keep one provider and one model configuration for MVP. Do not introduce Semantic Kernel, multi-agent orchestration, vector search, conversation persistence, or a separate AI microservice. Provider/model and transport package versions must be selected and locked in Step 4; no specific provider is assumed implemented or approved by this plan.
+
 # 3 Bootstrap prerequisites and version policy
 ### Windows prerequisites
 Use PowerShell 7 or Windows PowerShell 5.1, Git, .NET SDK 10.0.400, Node.js 24 LTS with npm, and a PostgreSQL psql client for section 23 provisioning. Visual Studio 2026 18.x must support net10.0 and have ASP.NET and web development plus JavaScript and TypeScript tooling installed. Version 18.0 is the documented target-framework floor; prefer the matching SDK and current Visual Studio servicing release. Visual Studio 2022 is not a supported net10.0 IDE. [R01–R03]
@@ -119,6 +150,7 @@ Use PowerShell 7 or Windows PowerShell 5.1, Git, .NET SDK 10.0.400, Node.js 24 L
 Sections 3–5 are scaffold commands; section 6 configures local secrets and startup. Sections 9–10 require implemented models and contexts; section 23 supplies provisioning and completion steps. The scaffold is not a functioning dashboard. Run each block from its stated directory. NuGet/npm access is required; an unresolved JavaScript SDK during sln add may indicate blocked NuGet access.
 
 | Dependency | Baseline |
+| --- | --- |
 | .NET SDK | 10.0.400; pin the installed serviced SDK in global.json |
 | Microsoft EF Core and EF Design | 10.0.11, aligned; dotnet-ef 10.0.11 |
 | ASP.NET Core OpenAPI and MVC Testing | 10.0.11 |
@@ -290,7 +322,12 @@ npm ci
 npm run dev -- --port 5173 --strictPort
 ```
 
-Add .env*, node_modules/, dist/, .vs/, *.user, and local cert/secret paths to .gitignore; allow a placeholder .env.example. VITE_API_BASE_URL is public. Day one checks prerequisites, project loading, independent scaffold builds, and cloud TLS access. Migrations and seeded reads follow on day two; drawer, simulation, and browser CORS checks follow after frontend integration on days six and seven. The final solution contains four backend projects, two tests, and one esproj. [R15]
+Add .env*, node_modules/, dist/, .vs/, *.user, and local cert/secret paths to .gitignore; allow a placeholder .env.example. VITE_API_BASE_URL is public. Step 1 checks prerequisites, project loading, independent scaffold builds, and cloud TLS access. Migrations and seeded reads follow in Step 2; drawer, simulation, and browser CORS checks follow after frontend integration in Steps 7 and 8. The final solution contains four backend projects, two tests, and one esproj. [R15]
+
+### Proposed AI configuration and secrets
+Store AiQueries:ApiKey only in API user-secrets or hosting secrets. The browser receives neither the key nor a provider endpoint. Commit only the disabled defaults in section 24. Configure the provider, model, and HTTPS base URL server-side, validate them at startup when enabled, and allowlist the intended provider host. No prompt or model field can override that host, configuration, or credentials.
+
+Do not send telemetry rows, asset names, addresses, database schema, connection strings, or repository code to the model. Send only the user prompt and fixed contract vocabulary: filter fields, enum tokens, supported site/type values, and sorting semantics. Label the prompt input for synthetic demo data only. Keep prompts and full provider outputs out of routine logs and persistent storage.
 
 # 7 Device domain model
 MonitoredDevice owns identity and inventory metadata, not measurements or computed online status. The catalog is seeded with 24 stable, fictional devices across three sites and several device types. No real asset names, industrial network addresses, or customer data belong in the demo.
@@ -311,6 +348,7 @@ public sealed class MonitoredDevice
 ```
 
 | Field | PostgreSQL and rule |
+| --- | --- |
 | Id | uuid primary key; immutable identity |
 | AssetTag | varchar(64), required; uppercase canonical unique tag |
 | DisplayName | varchar(120), required; trim, preserve display case |
@@ -372,6 +410,7 @@ Repositories are ITelemetryRepository, IIncidentRepository, and ISimulationBatch
 DeviceDbContext owns device.monitored_devices and device.__ef_migrations_history. TelemetryDbContext owns telemetry.telemetry_pings, telemetry.incident_logs, telemetry.device_telemetry_state, telemetry.simulation_batches, and telemetry.__ef_migrations_history. Schema names are explicit in mapping and history configuration; do not depend on search_path. Contexts have separate model snapshots and migrations directories. [R16]
 
 | Table or mapping | Required constraints and indexes |
+| --- | --- |
 | monitored_devices | UUID PK; unique asset_tag; index (site_code, id); lengths in section 7 |
 | telemetry_pings | UUID PK; unique (batch_id, device_id); index (device_id, observed_at_utc DESC, id DESC) |
 | incident_logs | UUID PK; index (device_id, opened_at_utc DESC, id DESC); unique partial index (device_id, kind) WHERE resolved_at_utc IS NULL |
@@ -453,6 +492,7 @@ At startup and hourly, clean up under the same advisory lock: remove eligible ol
 Use an injected TimeProvider and one captured asOfUtc per request. Threshold comparisons are defined below; tests exercise the exact boundaries. A device's catalog retirement state is separate from its health.
 
 | Condition in priority order | Returned health |
+| --- | --- |
 | No telemetry state or no observation | Unknown |
 | asOfUtc minus LastObservedAtUtc > 90 seconds | Offline |
 | Fresh latest outcome is Timeout | Offline |
@@ -473,13 +513,20 @@ The device cap is explicit. Prevent a seed or future inventory endpoint from exc
 
 Fleet summary is global across active devices, independent of grid filters. It returns total, healthy, degraded, offline, unknown, and average latency of fresh successful devices only, plus sampleCount. Recent drawer telemetry and incidents are server-paged database queries. GET domain responses expose asOfUtc; catalog and telemetry are separate reads, so no cross-module serializable snapshot is promised.
 
+### AI reuse of fleet semantics
+The AI-supported view is limited to the active device grid and the exact section 12 search, site, type, health, and sort semantics. All predicates combine with AND. It cannot request historical analytics, aggregates, arbitrary threshold predicates, date ranges, multiple status values, OR expressions, retired-only views, or inventory writes. It must return an unsupported or clarification result when the request cannot be represented. For example, CPU above 90 percent cannot be replaced silently with Degraded, whose definition also includes latency and uses a different CPU threshold.
+
+AI never calculates health or fleet metrics. The existing GET captures asOfUtc and composes active catalog and telemetry projections within the 1,000-device cap. Global fleet cards remain unfiltered. A translated Offline query includes both fresh timeouts and stale observations under the existing policy; its preview makes that meaning visible.
+
 # 12 Versioned REST surface
 | Method and route | Response and behavior |
+| --- | --- |
 | GET /api/v1/devices | 200 PagedResult<DeviceRowDto>; active catalog by default |
 | GET /api/v1/devices/{deviceId} | 200 DeviceDetailDto; 404 unknown UUID |
 | GET /api/v1/devices/{deviceId}/telemetry | 200 PagedResult<TelemetryPingDto>; newest first |
 | GET /api/v1/devices/{deviceId}/incidents | 200 PagedResult<IncidentDto>; newest first |
 | GET /api/v1/metrics/summary | 200 MetricsSummaryDto; active fleet, not current page |
+| POST /api/v1/ai/device-queries | Proposed: 200 AiDeviceQueryResponseDto; translates only, does not query or write the database; absent when disabled |
 | POST /api/v1/simulation/batches | 200 SimulationBatchResultDto after atomic commit |
 | GET /health/live | Minimal process liveness; no database details |
 | GET /health/ready | 200 or 503; database connectivity verified, sanitized |
@@ -500,6 +547,11 @@ An out-of-range page returns 200 with an empty items array and the true totalCou
 
 ### Drawer queries
 Telemetry and incident endpoints support page and pageSize with the same bounds. Telemetry also supports fromUtc and toUtc as a half-open UTC range [fromUtc,toUtc), maximum seven days, default last 24 hours. Invalid ranges are 400. Telemetry order is ObservedAtUtc DESC, Id DESC. Incidents optionally accept state=open|resolved|all, default all, and order by OpenedAtUtc DESC, Id DESC. Unknown catalog IDs return 404; a known device without telemetry returns an empty list.
+
+### Proposed AI endpoint behavior
+POST /api/v1/ai/device-queries accepts AiDeviceQueryRequestDto and returns a translation decision synchronously. It performs no database query or write. A supported response provides canonical parameters for GET /api/v1/devices; the browser applies them only after review. The model is called once per explicit submission, never during grid polling, keystrokes, page changes, or sorts. POST is used because user intent belongs in a bounded JSON body rather than a URL.
+
+When AiQueries:Enabled=false, do not register the route and return normal 404 for requests. When enabled, use the dedicated limits in section 14. Unknown input properties and unsupported contract versions are rejected. Document this route separately from simulation: enabling read-only AI never enables a simulation write route.
 
 # 13 DTOs validation and simulation
 ### Wire contracts
@@ -539,6 +591,50 @@ Healthy can demonstrate recovery after any scenario. Simulation requests execute
 ### Validation and errors
 Use controller binding plus DataAnnotations for shape and ranges, and Application validation for distinct IDs, scenario rules, catalog existence, retirement, and request hash. Reject malformed UUIDs, unknown enum tokens, oversized arrays, invalid query bounds, and unknown sort names before database work. Limit the request body to 16 KB and apply a named simulator rate limiter, e.g. five requests per minute per operator, no queued writes. MVP returns 429 with Retry-After when limited.
 
+### Proposed AI wire contracts
+```text
+AiDeviceQueryRequestDto = { prompt: string }
+DeviceGridQueryDto = {
+  q: string|null, site: string|null, type: string|null,
+  status: 'Unknown'|'Healthy'|'Degraded'|'Offline'|null,
+  sort: 'displayName'|'assetTag'|'siteCode'|'status'|
+        'lastObservedAtUtc'|'latencyMs'|'cpuPercent',
+  direction: 'asc'|'desc'
+}
+AiDeviceQueryResponseDto = {
+  contractVersion: '1',
+  outcome: 'Ready'|'NeedsClarification'|'Unsupported',
+  query: DeviceGridQueryDto|null,
+  message: string
+}
+```
+
+The provider proposal uses the same outcome and query shape plus reasonCode, but not the public message or contractVersion. Allowed reasonCode values are ready, ambiguous, unsupported, and no_interpretation. Reject additional properties at every nesting level. All fields are present; absent optional filters use null. Ready requires a nonnull query and reasonCode=ready. NeedsClarification requires query=null and reasonCode=ambiguous or no_interpretation. Unsupported requires query=null and reasonCode=unsupported. The server emits contractVersion=1 and a fixed, plain-text message from the outcome/reason code; do not render provider narrative or HTML.
+
+Trim prompt and require 1–500 characters within an 8 KB JSON body. Validate UTF-8 JSON shape and string types. Trim q, allow null or 1–100 characters, and apply the existing literal substring semantics. Canonicalize valid site/type tokens against the configured seed vocabulary and reject unknown values. Validate exact health, sort, direction, reasonCode, and outcome tokens; numeric enum inputs, duplicate JSON property names, nested expressions, SQL, identifiers, and operator objects are invalid. Require strict parsing in the adapter; deserialization that silently ignores unknown members is insufficient. [R33]
+
+The model does not choose page or pageSize. Applying Ready sets page=1 and retains the current valid pageSize (default 25, maximum 100). All omitted filters become null, replacing the prior filter set. sort defaults to displayName and direction to asc in the prompt instructions; the returned object must still contain both valid fields. GET independently revalidates every parameter, so a modified client cannot bypass validation.
+
+Example supported request and normalized response:
+```json
+{ "prompt": "Show offline devices at DEN with the latest observations first" }
+```
+```json
+{
+  "contractVersion": "1",
+  "outcome": "Ready",
+  "query": {
+    "q": null, "site": "DEN", "type": null,
+    "status": "Offline",
+    "sort": "lastObservedAtUtc", "direction": "desc"
+  },
+  "message": "Review the proposed filters before applying them."
+}
+```
+After Apply, the browser calls GET /api/v1/devices?page=1&pageSize=25&site=DEN&status=Offline&sort=lastObservedAtUtc&direction=desc. The effective pageSize follows the current grid setting. Empty results are legitimate, never a reason to loosen the query silently.
+
+An ambiguous request such as “show troubled devices” returns 200 with outcome=NeedsClarification, query=null, and a fixed message asking the user to name Healthy, Degraded, Offline, or Unknown and any desired site/type. An unsupported request such as “delete all offline devices” returns 200 with outcome=Unsupported and query=null. These are successful translation decisions, not transport failures. A syntactically valid model proposal remains untrusted; semantic correctness requires human review and evaluation cases, not confidence scores.
+
 # 14 API errors and access controls
 ### Uniform error contract
 Use ASP.NET Core ProblemDetails for failed requests, with ValidationProblemDetails for field errors. Add a stable code and traceId extension. Do not wrap successful DTOs in a second data envelope. Configure model validation, exception handling, authentication failures, rate-limit rejection, and readiness failures deliberately so their status and body behavior are tested. [R17]
@@ -555,6 +651,7 @@ Use ASP.NET Core ProblemDetails for failed requests, with ValidationProblemDetai
 ```
 
 | Status | Contract meaning |
+| --- | --- |
 | 400 | Invalid input or unsupported query value; field errors when applicable |
 | 401 / 403 | Missing or invalid operator credential / authenticated policy denial |
 | 404 | Unknown device or route; disabled public simulator route is absent |
@@ -570,7 +667,18 @@ Production public-demo mode registers anonymous GET routes and leaves simulator 
 
 If remote operator writes are needed, register the simulator only on a private operator environment or require a backend-validated X-Demo-Operator-Key policy over HTTPS. Supply Simulation:OperatorKey through a secret store, compare securely, restrict trusted ingress where possible, and invoke it from an operator terminal; the SPA never embeds or persists the key. Full OIDC/JWT login, roles, and user administration remain stretch work. Public data is intentionally fictional and public-readable; this is not a policy for confidential enterprise telemetry.
 
-CORS allows exact origins and needed methods and headers. For the public SPA, allow GET and required content headers; local development additionally needs POST and Content-Type. No wildcard with credentials, no cookie authentication, and no AllowCredentials in the MVP. CORS is a browser rule, not authentication. Apply it before endpoint authorization. [R18]
+CORS allows exact origins and needed methods and headers. For the public SPA, allow GET and required content headers, plus POST and Content-Type only for the explicitly enabled AI translation route; local development additionally permits the enabled simulator POST. Route and policy controls still prevent public simulation writes. No wildcard with credentials, no cookie authentication, and no AllowCredentials in the MVP. CORS is a browser rule, not authentication. Apply it before endpoint authorization. [R18]
+
+### Proposed AI validation and security architecture
+Before a provider call, check route enablement, body size, request validation, named rate policy, concurrency permits, and the atomic daily request budget. Build a fixed instruction and contract separately from the user text. Tell the model to classify unsupported or ambiguous intent and to emit only the strict structured proposal. Provider-supported schema enforcement is helpful but never substitutes for local validation. Treat prompts and provider responses as untrusted data; instructions to ignore rules, disclose secrets, execute SQL, fetch URLs, or invoke tools have no execution path.
+
+The adapter parses at most 8 KB of output, rejects malformed JSON, duplicate members, extra fields, invalid unions, or code fences, and caps generation at 400 output tokens. Application validation then enforces the allowlists and query semantics. No database work occurs during translation, and the existing GET validator runs again on Apply. SQL-looking text in q is only literal search data; it cannot become an executable expression. Existing EF projections remain responsible for translated database queries. There is no raw SQL endpoint, SQL text response, dynamic property access, or provider-selected query method. [R32, R33]
+
+Use a ten-second provider timeout, linked request cancellation, no automatic provider retries, and no repair loop. Return sanitized ProblemDetails: 400 ai_prompt_invalid for invalid input, 413 request_too_large, 429 ai_rate_limited with Retry-After, 502 ai_output_invalid for invalid provider output, 503 ai_provider_unavailable for provider failures or quota exhaustion, and 504 ai_provider_timeout. Distinguish local daily budget exhaustion as 429 ai_budget_exhausted. Cancellation on browser disconnect stops downstream work where supported; it does not guarantee cancellation of provider billing. Do not echo prompts, provider payloads, URLs, credentials, SQL, or stack traces in errors.
+
+For the single-replica public synthetic demo, limit five translations per minute per client IP obtained only through trusted proxy configuration, ten per minute globally, two concurrent provider requests, no waiting queue, and 100 admitted calls per UTC day. Count each admitted provider attempt even when it fails; restore the daily count across restarts in a bounded host-local counter file outside the web root, with atomic access. This operational counter creates no application database table and contains no prompt data. If the counter cannot be read or persisted, disable translation until repaired rather than reset the budget silently. Multiple replicas require a shared limiter/counter and are outside MVP. Configure a provider-side spending cap as a second control; the call cap alone is not a currency guarantee. [R31]
+
+Public anonymous AI translation is permitted only for fictional public data and only when explicitly enabled with these controls. AiQueries:Enabled and simulation flags are independent. Keep authentication and future confidential-data access behind the normal facade policy; AI never expands caller authorization. Production AI responses use Cache-Control: no-store; no persistent prompt history or shared response cache is introduced. Log traceId, duration, outcome, validation reason, and available token counts without prompt or output content. The Apply action is a usability review step; server-side validation remains the security boundary.
 
 # 15 React layout and interaction map
 ### Component ownership
@@ -581,6 +689,7 @@ AppRoot
     DashboardPage
       DashboardHeader            synthetic badge and last updated
       MetricsSummary             4 status cards plus unknown and latency
+      AiQueryPanel               proposed plain English input and review
       DeviceToolbar              global search, site, type, status filters
       DeviceDataGrid             TanStack Table v8, semantic HTML table
         DeviceStatusBadge        text, icon, color
@@ -605,6 +714,13 @@ Zustand stores selectedDeviceId, drawerOpen, pollingEnabled, and columnVisibilit
 
 TanStack Query stores device pages, device details, fleet metrics, recent pings, and incidents. Query keys include every request-changing input. Local form state and hover/focus state stay in components. A shared api client supplies the base URL, AbortSignal, JSON handling, and ProblemDetails mapping. [R19–R21, R24]
 
+### Proposed plain English interaction
+Add AiQueryPanel above DeviceToolbar with a labelled input, 500-character limit, example prompt, Submit, a loading state, a normalized-filter preview, Apply, and Clear. Explain that it searches the active synthetic fleet using the supported filters. Show the existing thresholds and stale/timeout interpretation when previewing Degraded or Offline. Display no SQL and make no claim that the model has diagnosed infrastructure.
+
+Submit runs a TanStack Query mutation for translation; keep input and unapplied preview in component state. Apply a Ready result atomically to the existing controlled grid state, reset pageIndex=0, and let the ordinary devices query fetch. The preview is replaced on a new submission. Abort or ignore superseded responses, clear any old preview when the prompt changes, and disable Apply until the latest response is valid. Clarification, unsupported intent, rate limiting, timeout, or provider failure leave existing filters and rows intact. Manual filters remain available when AI is unavailable.
+
+Clear removes the AI preview and restores neutral grid filters and displayName ascending, preserving pageSize; manual changes after Apply become the current visible filter state. Use live status announcements and keyboard-accessible controls. AI state is not persisted in Zustand or browser storage. The existing drawer, table behavior, metrics scope, and freshness labels remain authoritative.
+
 # 16 Grid operations and server cache
 ### Table v8 configuration contract
 Use useReactTable with getCoreRowModel, controlled pagination/sorting/filter state, manualPagination=true, manualSorting=true, and manualFiltering=true. Pass totalCount as rowCount and use getRowId(row)=row.id. Do not install client pagination, sorting, or filtering row models for the main grid. Table is headless: it supplies state and utilities, while the application supplies header buttons, aria-sort, markup, styling, and focus behavior. [R19, R20]
@@ -628,6 +744,9 @@ Debounce global search by 300 ms and cancel superseded fetches using the signal 
 Define a short staleTime such as two seconds, stop intervals when polling is paused, and retry transient GET failures at most twice. Do not automatically retry POST with a newly generated BatchId. On successful simulation, invalidate the device page family, metrics, and affected drawer keys; avoid optimistic health changes because incidents and timestamps are server-owned.
 
 Fleet cards describe the entire active fleet and carry a “Fleet totals” label. Filtered result count belongs to the grid toolbar. Drawer queries are enabled only for a selected UUID, reset their own paging when selection changes, and never render one device's previous data under another device's title. A background refresh must preserve drawer focus and selection.
+
+### AI server state integration
+Use a mutation key such as ['ai-device-query', 'v1'] for explicit translation submissions. Do not put prompts into URLs or GET cache keys. Do not automatically retry the AI POST because another provider call consumes budget. On Apply, the normal ['devices', { page, pageSize, q, site, type, status, sort, direction }] key remains the only cache identity for the device view. Grid polling refreshes that translated filter set through GET and never invokes the model again. Translation does not invalidate metrics, telemetry, incidents, or simulation state because it changes no stored data.
 
 # 17 Supabase and deployment
 ### Database connection and exposure
@@ -656,33 +775,45 @@ Set Production, Simulation__HttpEndpointEnabled=false, DemoProducer__Enabled=tru
 
 Use minimal probes, structured request-duration logs, trusted forwarded headers, HTTPS ingress, and sanitized failures. Apply migrations once with release credentials, then seed the fixed fictional catalog through a private provisioning command. The internal producer supplies continuing measurements and hourly retention; startup does not recreate inventory. Verify recovery after an API restart, at least three successful producer cycles, and bounded cleanup before publishing the hosted demo.
 
-# 18 Critical path and scope control
-| Day | Work and exit gate | Budget |
-| 1 | Prerequisites, SLN/esproj loading, independent scaffold builds, Supabase TLS, provisioning and hosting access. No drawer or complete simulator gate yet. | 5–6 h |
-| 2 | Domain models and mappings, two contexts and migrations, fixed catalog seed, basic database read and shared pool registration. | 7–8 h |
-| 3 | Telemetry transaction, receipt-first replay, incident rules, periodic producer and retention policy; domain tests. | 7–8 h |
-| 4 | Fleet and drawer REST queries, DTOs, pagination/filter/sort semantics, errors, API documentation and public-write policy. | 6–7 h |
-| 5 | React shell, Tailwind styling, API client, Query/Zustand wiring, real metrics and basic grid. | 6–7 h |
-| 6 | Global search/sorting, paging, drawer history and local simulation; demonstrate timeout and recovery end to end. | 7–8 h |
-| 7 | Responsive and keyboard behavior, loading/error/stale states, request cancellation; functional scope freeze. | 5–6 h |
-| 8 | PostgreSQL and API integration tests, retention/replay cases, frontend smoke tests, CI and dependency review. | 6–7 h |
-| 9 | Continuous single-replica hosting, controlled migrations/seed, TLS/CORS, producer restart and cleanup checks. | 6–7 h |
-| 10 | Clean-clone rehearsal, README/decisions, screenshots, short video and release tag; resolve remaining showcase defects. | 5–6 h |
+### Proposed AI deployment gate
+Enable AiQueries only after the selected provider/model, schema adapter, limits, cancellation, sanitized errors, trusted ingress IP behavior, persistent daily counter, and server secret injection pass verification. Set provider credentials through hosting secrets and configure a provider spending cap. Keep outbound HTTPS restricted to the configured provider. If disabled or unavailable, the normal dashboard remains usable; report the AI release gate as incomplete rather than describing manual filtering as completion of Option A.
 
-The critical path is tooling and cloud access → schemas → API vertical slice → frontend integration → quality gates → deployment → publication evidence. Check hosting access on day one. Reserve days five through seven for React interaction and polish. The ten-day budget totals 60–70 hours; a seven-day variant compresses the same MVP into longer days and has no stretch allocation.
+# 18 Critical path and scope control
+| Step | Implementation focus | Completion gate |
+| --- | --- | --- |
+| 1 | Tooling and environment | Prerequisites, SLN/esproj loading, independent scaffold builds, Supabase TLS/provisioning, and hosting access are verified. |
+| 2 | Domain and persistence foundation | Models, mappings, two contexts and migrations, fixed catalog seed, database reads, and the shared pool pass verification. Existing startup wiring alone does not establish completion; AI remains proposed. |
+| 3 | Telemetry lifecycle | Atomic ingestion, receipt-first replay, incident rules, periodic producer, bounded retention, and focused domain tests work. |
+| 4 | API and AI query contracts | Fleet/drawer REST reads, DTOs, filtering/paging/sorting, errors, OpenAPI, and public-write policy work. AI contracts, validator, and fake-provider slice pass; one provider/model transport is selected and locked. |
+| 5 | AI provider and security integration | Bounded provider adapter, strict parsing, cancellation/timeout, sanitized failures, rate/concurrency limits, and persistent daily usage budget pass focused checks. Translation performs no database access. |
+| 6 | React dashboard foundation | React shell, Tailwind styling, API client, Query/Zustand boundaries, real fleet metrics, and basic grid work against the API. |
+| 7 | Complete user journeys and AI interaction | Global search/sort/paging, drawer history, local simulation and recovery work. Plain English Submit, preview, Apply, and Clear use the existing query flow; a live provider translation is verified. |
+| 8 | Interaction polish and functional scope freeze | Responsive/keyboard behavior, loading/error/stale states, cancellation, and AI unsupported/failure states work. Freeze functional scope before final verification. |
+| 9 | Tests and CI | PostgreSQL/API, retention/replay, AI validation/boundary, frontend, and E2E checks pass; CI and dependency review are complete. Deterministic CI remains separate from live-model evaluation. |
+| 10 | Deployment and hosted operations | Single-replica continuous hosting, controlled migrations/seed, TLS/CORS, producer restart/cleanup, AI secrets, public limits, restart budget persistence, and provider spending cap are verified. |
+| 11 | Release and project evidence | Clean-clone rehearsal and all mandatory release gates pass. README/D01–D11, screenshots, video, and release tag are complete; implementation evidence and limitations are recorded accurately. |
+
+The critical path is tooling and cloud access → schemas → telemetry lifecycle → API contracts → AI integration and React foundation → complete user journeys → verification → deployment → release evidence. Step 5 and Step 6 can proceed independently after their prerequisites pass; integrate both in Step 7. The eleven-step roadmap is a progress sequence, not an eleven-day schedule or a promise of effort hours. Advance based on completion evidence and spend additional time within a step when necessary.
 
 ### MVP commitment
-Ship the grid, fleet summary, drawer, deterministic local scenarios, incident recovery, separate contexts, stable routes, secure secrets, and cloud persistence. The hosted demo continuously generates synthetic data internally while its public API remains read-only. Include 24-hour telemetry retention, seven-day resolved incident history, bounded receipts, focused tests, and publication evidence. Stop stretch work until all these gates pass.
+Ship the grid, fleet summary, drawer, deterministic local scenarios, incident recovery, separate contexts, stable routes, secure secrets, cloud persistence, and approved Option A AI query workflow. The hosted demo continuously generates synthetic data internally while its public API performs no application database writes. Include 24-hour telemetry retention, seven-day resolved incident history, bounded receipts, focused tests, and publication evidence. Stop stretch work until all these gates pass.
 
 ### Stretch choices
-If the MVP finishes early, select at most one: a small trend chart, SignalR with reconnection, or URL-persisted filters. OIDC, multi-tenancy, editable provisioning, retention partitioning, large fleets, brokers, multiple producer replicas, and service extraction remain future projects.
+Trend charts, SignalR with reconnection, and URL-persisted filters remain optional work after the eleven-step MVP release. OIDC, multi-tenancy, editable provisioning, retention partitioning, large fleets, brokers, multiple producer replicas, and service extraction remain future projects. Removing the deadline does not automatically expand the approved MVP scope.
 
-### Schedule fallback
-If the API slice slips past day four, remove optional animations, column preferences, and remote operator access. Preserve correct filtering, keyboard drawer behavior, replay integrity, and public-write policy. If continuous hosting is unavailable by day nine, ship a reproducible local demo and video, clearly identify the missing hosted gate, and use day ten for remediation. A paused or sleeping host may show truthful stale status, but does not pass the continuous-demo gate.
+### Blockers and incomplete gates
+If an API or AI prerequisite is incomplete, continue the current step until its gate passes; independent work can proceed where dependencies allow. Optional animations, column preferences, and remote operator access can still be deferred to reduce complexity, but quality and security gates cannot be waived to keep a calendar date. Preserve correct filtering, keyboard drawer behavior, replay integrity, and public-write policy.
 
+If continuous hosting is unavailable in Step 10, maintain a reproducible local demo and video and record the hosted gate as incomplete while resolving the blocker. A paused or sleeping host may show truthful stale status but does not pass the continuous-demo gate. A local demonstration can be shared as progress; it does not establish a complete hosted release.
+
+### Scope control for Option A
+AI remains limited to one endpoint, one provider, one typed device-grid query, and one compact React panel. Existing domain, persistence, producer, security, drawer, and verification gates remain mandatory. Complete the contract/fake-provider slice in Step 4, the provider/security integration in Step 5, the live end-to-end translation in Step 7, and failure behavior before the Step 8 freeze.
+
+If the provider connection or a mandatory AI control is incomplete, keep the AI gate open and resolve it before release. Do not switch to unrestricted SQL or skip security tests. A disabled feature or manual filtering fallback preserves dashboard usability but is not completion of the approved AI requirement. Step 11 release requires passing all mandatory gates; there is no calendar-based cutoff or silent reduction in requirements.
 # 19 Acceptance tests CI and publication
 ### Required acceptance evidence
 | Gate | Observable pass condition |
+| --- | --- |
 | Setup | Fresh Windows clone opens the actual .sln; all seven projects load: four backend, two tests, one frontend; API and frontend build independently with documented prerequisites. |
 | Grid | Use pageSize=10 with the 24-device seed; search finds an item initially on another page; numeric sorting, nulls, tie-breakers, and counts are correct. |
 | Metrics | Sum of four health counts equals total; filters do not change global totals; average uses only the declared fresh successful sample. |
@@ -707,12 +838,28 @@ On pull requests and main, install the pinned .NET SDK and Node 24; restore the 
 Commit npm/NuGet lock files; section 24 supplies their generation and subsequent locked restore commands. Supply ephemeral test credentials only. Public PR jobs receive no production secrets. Pin workflow actions to reviewed commits and archive evidence; automated production deployment is optional.
 
 ### Showcase readiness
-The README opens with a screenshot, purpose, stack, demo link/status, and a 60–90 second video. Include a compact topology, setup steps, secret placeholders, simulation scenarios, decisions D01–D10, tests, limitations, and an extraction roadmap. Screenshots show synthetic labels and no keys. Tag v1.0.0 after a clean-clone rehearsal. The LinkedIn draft explains the project, a concrete frontend interaction, one backend design choice, and evidence links without claiming production industrial deployment. Publishing the post is a separate owner action.
+The README opens with a screenshot, purpose, stack, demo link/status, and a 60–90 second video. Include a compact topology, setup steps, secret placeholders, simulation scenarios, decisions D01–D11, tests, limitations, and an extraction roadmap. Screenshots show synthetic labels and no keys. Tag v1.0.0 after a clean-clone rehearsal. The LinkedIn draft explains the project, a concrete frontend interaction, one backend design choice, and evidence links without claiming production industrial deployment. Publishing the post is a separate owner action.
+
+### Proposed AI acceptance and test matrix
+| Gate | Observable pass condition |
+| --- | --- |
+| Supported intent | Prompt for Offline at DEN produces the canonical typed filter; Apply calls the normal GET and finds matching devices across pages. Equivalent manual parameters yield identical rows/count/asOf semantics with a fixed clock. |
+| Strict validation | Malformed JSON, duplicate/extra properties, numeric enums, unknown site/type/sort, missing fields, invalid outcome/query combinations and overlong q are rejected before Apply or database access. |
+| Unsafe and unsupported intent | SQL/write/tool instructions cannot invoke any database or network tool. Unsupported thresholds, OR/multiple-status, historical requests and ambiguity produce no executable query or silent approximation. |
+| Failure isolation | Timeouts, unavailable provider, invalid output, quotas, disabled route and cancellation have documented behavior; existing filters/data remain usable. GET and internal producer work independently. |
+| Cost and privacy | Per-client/global/concurrency/daily limits tested, zero queued calls, count survives restart, counter failures disable AI, no automatic retries and no secrets/prompts/provider text in logs or dist. |
+| UI consistency | Apply resets page only and replaces filters, Clear resets neutral filters, late results cannot overwrite newer intent, manual filters remain usable, polling never calls the provider and fleet cards stay global. |
+| Module boundary | AiQueries has no EF/SQL/DbContext/module-entity or write-use-case dependency; provider adapter does not query either schema. |
+
+Use deterministic IStructuredQueryGenerator fakes for unit tests and WebApplicationFactory endpoint tests. Spy on module ports to prove translation does not access storage; prove invalid GET input causes no database work. Use an isolated PostgreSQL fixture and fixed clock to compare manual versus AI-applied queries. Test rate windows, daily reset at UTC midnight, restart persistence, concurrency rejection, timeout, cancellation, disabled-route 404, CORS, and ProblemDetails. Add prompt-evaluation cases for supported, ambiguous, unsupported, and adversarial language; a fake only proves control flow, not model accuracy.
+
+React tests cover preview, Apply/Clear, stale responses, error retention and accessible status. Extend the existing Playwright journey with a stubbed translation followed by real GET filtering; it remains deterministic. Add a small owner-run live-provider smoke/evaluation set for actual schema adherence and interpretation in Step 7 and before release. CI contains no production AI credentials, has no live model dependency, and never spends provider budget by default. Record live evaluation date, model configuration, cases and outcomes without secrets or raw prompts containing private information.
 
 # 20 Risks review and approval
 | Risk | Mitigation and review consequence |
-| Scope exceeds available time | Ten-day baseline, day-seven functional freeze, no stretch before all MVP gates pass. |
-| esproj fails to load | Verify the pinned JS SDK and IDE workloads on day one; keep the documented independent CLI workflow usable. |
+| --- | --- |
+| Scope grows beyond the approved MVP | Eleven implementation steps with completion gates; functional scope freezes after Step 8 and stretch work waits until mandatory MVP gates pass. |
+| esproj fails to load | Verify the pinned JS SDK and IDE workloads in Step 1; keep the documented independent CLI workflow usable. |
 | IPv6 or SSL connection failure | Test session pooler and CA path from the actual host early; preserve certificate verification. |
 | Pool exhaustion | Explicit shared singleton data source, ten-connection pool per API process; budget admin connections and extra replicas. |
 | Frontend implies fleet search over one page | All main-grid operations execute server-side; add an off-page search acceptance test. |
@@ -725,16 +872,28 @@ The README opens with a screenshot, purpose, stack, demo link/status, and a 60�
 ### Technical review conclusions
 The reference graph is acyclic, both contexts own independent migration histories, and no domain model depends on infrastructure. Fleet composition explicitly bounds the catalog and avoids a hidden cross-schema join. Telemetry, incidents, state, and receipt share one transaction; inventory validation does not imply distributed atomicity. The health model distinguishes observed failures from elapsed-time staleness, and the incident model makes that limitation visible.
 
-Pagination, filtering, sorting, count, and summary semantics agree between REST and React. Public writes are disabled at the route and policy layers, not merely through UI visibility. Frontend build configuration is public while runtime database credentials remain server-side. Version compatibility follows package dependency ranges rather than equal patch-number assumptions. These choices support the timetable while leaving clear expansion points.
+Pagination, filtering, sorting, count, and summary semantics agree between REST and React. Public writes are disabled at the route and policy layers, not merely through UI visibility. Frontend build configuration is public while runtime database credentials remain server-side. Version compatibility follows package dependency ranges rather than equal patch-number assumptions. These choices support the staged implementation while leaving clear expansion points.
 
 ### Owner approval checklist
-Approve the module/schema boundaries, seed-only inventory, deterministic observations, five-second polling, global grid processing, internal producer, bounded retention, and public read-only API. Approve the ten-day target and day-seven functional freeze. Seven-day delivery is an accelerated option, not the baseline promise. Technical review establishes a coherent plan; it does not certify an application that has not yet been built.
+Approve the module/schema boundaries, seed-only inventory, deterministic observations, five-second polling, global grid processing, internal producer, bounded retention, and public read-only database access. The owner has selected eleven implementation steps with completion gates instead of a fixed-day or working-hour schedule. Stabilize functional scope after Step 8 and require mandatory verification before release. Technical review establishes a coherent plan; it does not certify an application that has not yet been built.
 
 | Approval item | Owner entry |
+| --- | --- |
 | Architecture and scope | Approved / amendments required |
 | Security and demo exposure | Approved / amendments required |
-| Seven to ten day schedule | Approved / revised target |
+| Eleven implementation steps including Option A | Selected by owner; completion evidence pending |
 | Reviewer and date | ______________________________ |
+
+### Option A risk and approval amendment
+| Risk | Mitigation and review consequence |
+| --- | --- |
+| Model proposes a valid but wrong filter | Visible normalized preview, explicit Apply, manual correction and live evaluation cases; never assert guaranteed intent accuracy. |
+| Prompt injection or unsafe query proposal | Strict typed contract and duplicate/unknown member rejection, independent validators, no SQL/tool execution or database access in the adapter. |
+| Public AI usage exceeds budget | Dedicated per-client/global/concurrency/daily limits, persistent count and provider spending cap; fail closed on counter failure and no provider retries. |
+| AI adds implementation complexity | One provider and grid-only scope; Step 4 contracts, Step 5 secure provider integration, Step 7 live journey, and Step 8 scope freeze. Resolve incomplete gates without introducing a deadline or dropping required controls. |
+| AI is confused with implemented Step 2 work | Edition status records startup evidence separately; all new AI components remain proposed until their implementation gates pass. |
+
+Option A is the approved architecture choice. Its implementation and release evidence remain pending. Retain D01–D10 and approve the bounded D11 contracts, validation, provider isolation and eleven-step implementation sequence without a fixed time limit for implementation. The approval checklist does not imply the model adapter, production budget controls, or Step 2 database gates have been verified.
 
 # 21 Official references
 References are linked to official documentation or publisher package metadata. Verification date is 12 October 2026. Reference IDs in the body point to this register. Versioned documentation is used where available; moving documentation should be checked again if the implementation starts after dependency upgrades.
@@ -841,6 +1000,18 @@ Earlier scaffold checks exercised SLN creation, net10.0 controller/library templ
 
 Runtime secrets, role provisioning, migrations, IDE debugging, business endpoints, tests, and hosting require the eventual implementation environment. Record resolved versions and clean-clone evidence in the README. This document supplies planned commands and configurations; it does not claim that the dashboard has been implemented.
 
+### Edition 1 5 reference and verification amendment
+R31 Microsoft ASP NET Core rate limiting middleware
+https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit?view=aspnetcore-10.0
+
+R32 Microsoft EF Core querying data
+https://learn.microsoft.com/en-us/ef/core/querying/
+
+R33 Microsoft System Text Json reject unmapped members
+https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/missing-members
+
+R31–R33 support framework mechanics only; endpoint fields, limits, budget persistence, and the implementation sequence are project design decisions. Provider-specific schema and token-limit documentation must be recorded after provider selection. Existing R01–R30 and their original verification date are preserved. Edition 1.5 does not claim new execution of the bootstrap, Step 2 migrations, or application tests. Step 2 implementation evidence is limited to the supplied startup code described in the opening status record.
+
 # 23 Database provisioning and privileges
 Use a new Supabase project dedicated to synthetic data. Before migrations, provision hm_migrator as the owner of the two private schemas and hm_runtime as a separate restricted login. These administrative steps are prerequisites, not commands to run as the runtime user. A PostgreSQL psql client is required for the interactive password commands below; it is an additional setup prerequisite, not a NuGet package.
 
@@ -938,3 +1109,28 @@ Pop-Location
 ```
 
 Integration tests require the isolated PostgreSQL fixture; never point them at the hosted demonstration database. The Playwright journey additionally requires its configured API/SPA startup fixture and installed browser. Automated bootstrap/CI scripts must check each native exit code and stop on failure. Visual Studio startup settings, test fixtures, business code, initial seeding, and hosting configuration are explicit implementation tasks rather than silently omitted scaffold commands.
+
+### Proposed nonsecret AI defaults
+Merge this additional top-level block into section 24 appsettings.json; keep existing defaults unchanged. Startup validates the provider/model/host and secret when enabled. None of these defaults enables the AI route by itself.
+```json
+{
+  "AiQueries": {
+    "Enabled": false,
+    "Provider": "",
+    "Model": "",
+    "BaseUrl": "",
+    "TimeoutSeconds": 10,
+    "MaxPromptCharacters": 500,
+    "MaxRequestBodyBytes": 8192,
+    "MaxResponseBytes": 8192,
+    "MaxOutputTokens": 400,
+    "RequestsPerClientPerMinute": 5,
+    "RequestsGlobalPerMinute": 10,
+    "MaxConcurrentRequests": 2,
+    "DailyRequestLimit": 100,
+    "BudgetCounterPath": "<host-local-private-writable-path>"
+  }
+}
+```
+
+AiQueries__ApiKey is a hosting secret; no VITE_AI key or browser provider SDK is permitted. Add startup option validation, the named limiter and middleware, provider HttpClient cancellation, and the private budget-counter path during implementation. These are proposed additions rather than runnable completed integration code. Extend the existing validation commands with the AI tests in section 19; those tests run under the same backend and frontend test gates, without adding another solution project. Record provider transport dependencies in the existing lock files.
