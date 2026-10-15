@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Allow tests to exercise internal implementation details
+        without expanding the application's public API. -->
+    <InternalsVisibleTo Include="HealthMonitor.UnitTests" />
+    <InternalsVisibleTo Include="HealthMonitor.IntegrationTests" />    
+    
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
   </ItemGroup>

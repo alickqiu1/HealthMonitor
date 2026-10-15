@@ -15,6 +15,8 @@ This edition preserves sections 1–24, original models, bootstrap commands, per
 
 **Planned alignment after Step 2.** D03 still requires one DI-owned shared NpgsqlDataSource, separate per-schema migration histories, and the section 2 module folders. The shown startup code does not demonstrate those properties; reconcile the existing namespaces and registration without discarding working code. All AI components, contracts, policies, provider setup, UI, and AI tests below are proposed implementation work. No AI endpoint or provider integration is claimed complete.
 
+**Documentation and testing amendment.** New and changed code must meet the professional documentation and incremental testing requirements in section 19. Complete Step 2 before the retrospective documentation review of older code. Focused tests accompany each step; Step 9 consolidates comprehensive CI and regression evidence.
+
 ### Approval recommendation
 Retain the MVP and decisions D01–D10 and incorporate approved Option A as decision D11. Treat service extraction, full identity management, streaming, device provisioning, and advanced analytics as future work. Public HTTP access performs no application database writes; the proposed AI translation POST is a read-only operation that can incur model-provider usage. A small server-owned producer keeps the hosted synthetic fleet active; local simulation remains available for deterministic demonstrations. The simulator and UI clearly identify all data as synthetic.
 
@@ -793,6 +795,8 @@ Enable AiQueries only after the selected provider/model, schema adapter, limits,
 | 10 | Deployment and hosted operations | Single-replica continuous hosting, controlled migrations/seed, TLS/CORS, producer restart/cleanup, AI secrets, public limits, restart budget persistence, and provider spending cap are verified. |
 | 11 | Release and project evidence | Clean-clone rehearsal and all mandatory release gates pass. README/D01–D11, screenshots, video, and release tag are complete; implementation evidence and limitations are recorded accurately. |
 
+All eleven steps retain their existing order and scope. Each completion gate also requires the applicable documentation and focused tests described in section 19, created alongside the work. Step 9 consolidates comprehensive CI/regression coverage rather than deferring testing until that step.
+
 The critical path is tooling and cloud access → schemas → telemetry lifecycle → API contracts → AI integration and React foundation → complete user journeys → verification → deployment → release evidence. Step 5 and Step 6 can proceed independently after their prerequisites pass; integrate both in Step 7. The eleven-step roadmap is a progress sequence, not an eleven-day schedule or a promise of effort hours. Advance based on completion evidence and spend additional time within a step when necessary.
 
 ### MVP commitment
@@ -823,6 +827,30 @@ If the provider connection or a mandatory AI control is incomplete, keep the AI 
 | Security | No secret in files/history/logs or dist; TLS validation succeeds; unauthorized public POST cannot write; runtime role cannot execute DDL. |
 | Release | HTTPS deployment smoke check, CI green, clean README rehearsal, screenshots/video and a tagged release are present. |
 | Hosted lifecycle | At least three one-minute cycles maintain a mixed fleet; restart recovers generation; cleanup preserves latest state and incident history without FK failures. |
+
+### Professional code documentation requirements
+Apply this standard immediately to all new or materially changed code, including the remaining Step 2 work. Finish Step 2 and its completion gates before starting a retrospective documentation review of older files. Record older-code documentation gaps for that later review; do not claim they have already been remediated.
+
+Document each source file or cohesive module with its purpose, ownership, architectural layer, responsibilities, key collaborators, and important constraints. Explain public types, interfaces, use cases, and nontrivial members using C# XML documentation or TypeScript TSDoc/JSDoc as appropriate. Describe behavior and intent rather than restating signatures.
+
+Document inputs, outputs, nullability, units, UTC/time assumptions, validation, invariants, exceptions or error results, side effects, cancellation, and resource ownership where relevant. For persistence and background work, explain transaction boundaries, schema ownership, ordering, replay/idempotency, concurrency and locking, retention, and failure/recovery behavior. For API and AI boundaries, document authorization, trust boundaries, allowlists, limits, sanitized errors, and secret-handling constraints.
+
+Use concise inline comments for non-obvious algorithms, business decisions, security controls, and tradeoffs; explain why the code exists. Keep examples, OpenAPI descriptions, configuration/setup notes, and architecture decision records aligned with implemented behavior. Never put credentials or sensitive payloads in documentation. Avoid boilerplate comments, speculative claims, and comments that merely repeat the code.
+
+Documentation is part of each change and completion review: a maintainer must be able to understand the contract and safely modify the code. Review accuracy, consistency with tests, and unresolved assumptions before marking the affected step complete.
+
+### Incremental unit and integration testing requirements
+Create focused automated tests alongside implementation in every step, rather than postponing test creation until Step 9. At minimum, add or update unit tests for new or changed business rules, validators, application behavior, and frontend logic. Add focused integration tests in the same step whenever correctness depends on PostgreSQL behavior, migrations, transactions, API serialization/middleware, module adapters, provider transport, or interaction between components. For tooling, deployment, and release work, execute relevant smoke/configuration checks and existing tests; record any genuinely inapplicable unit or integration cases with a reason.
+
+For each affected behavior, cover success cases; invalid input and dependency/error cases; empty, null, minimum/maximum and exact threshold boundaries; and replay/idempotency, concurrency, and security cases wherever applicable. Record applicability and expected outcomes so omissions are deliberate and reviewable, rather than treating every category as a mandatory artificial test for every function.
+
+Replay/idempotency tests verify duplicate requests return the saved result without duplicate writes, changed payloads conflict, expired receipts cannot cause a new write, and retirement does not break a valid replay. Concurrency tests exercise simultaneous duplicate and competing requests, atomic rollback, incident uniqueness, scoped context isolation, and AI admission/budget limits as applicable. Assert persisted state and external call counts as well as responses.
+
+Security tests cover authorization and public-write denial, input and query allowlists, malformed or oversized payloads, prompt injection and unsafe provider output, secret/error/log redaction, runtime database privileges, and rate/budget enforcement as relevant. Verify success and denied/failure paths; use isolated fixtures and fictional data.
+
+Keep unit tests deterministic with controlled clocks, inputs, and dependency fakes. Use an isolated real PostgreSQL instance and both migrations for provider-dependent integration tests; do not substitute EF InMemory or SQLite for PostgreSQL guarantees. Stub provider responses for deterministic CI, including timeout, cancellation, malformed output, and quota failures. Keep live-model evaluation separate, explicitly configured, and outside ordinary CI secrets.
+
+Each step completion gate includes the applicable focused tests passing, updated documentation, reproducible run instructions, and recorded evidence or unresolved gaps. Steps 2–8 therefore accumulate executable coverage as features are built; Steps 10–11 retain relevant regression and operational checks. Step 9 remains the comprehensive integration, regression, frontend/E2E, architecture/security, dependency-review, and CI consolidation step: close coverage gaps, run the accumulated suite together, and establish repeatable CI. It is not the first point at which tests are written. Existing section 19 acceptance matrices and mandatory release gates remain in force.
 
 ### Tests worth writing
 Unit tests cover time thresholds at 90 seconds, 250 ms, and 80 percent; unknown and timeout precedence; incident opening and recovery; summary denominators; sorting and pagination boundaries. PostgreSQL integration tests use an isolated database and both real migrations to check timestamptz, partial uniqueness, rollback, duplicate BatchId, and simultaneous requests. EF InMemory and SQLite cannot prove these provider behaviors. WebApplicationFactory verifies serialization, ProblemDetails, query bounds, and security modes; make the API entrypoint accessible to its test assembly. [R23]

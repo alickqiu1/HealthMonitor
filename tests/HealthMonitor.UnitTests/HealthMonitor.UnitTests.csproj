@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\backend\HealthMonitor.Domain\HealthMonitor.Domain.csproj" />
     <ProjectReference Include="..\..\src\backend\HealthMonitor.Application\HealthMonitor.Application.csproj" />
+    <ProjectReference Include="..\..\src\backend\HealthMonitor.Api\HealthMonitor.Api.csproj" />
   </ItemGroup>
 
 </Project>
