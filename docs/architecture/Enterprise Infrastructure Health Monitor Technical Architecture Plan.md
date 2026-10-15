@@ -87,7 +87,7 @@ Only the existing module query adapters access PostgreSQL. AI translates intent;
 # 2 Repository and project boundaries
 ```text
 HealthMonitor/
-  HealthMonitor.sln                   actual SLN format
+  HealthMonitor.slnx                   actual SLN format
   global.json                        pinned .NET SDK
   .config/dotnet-tools.json           local EF tool
   .github/workflows/ci.yml
@@ -124,7 +124,7 @@ HealthMonitor/
     HealthMonitor.IntegrationTests.csproj
 ```
 
-HealthMonitor.Api.csproj is the C# ASP.NET Core executable project. Domain, Application, and Infrastructure are its three C# class-library projects. The two test .csproj files are additional C# test projects, outside the four backend production projects. HealthMonitor.sln includes these six .csproj files and the frontend health-monitor-web.esproj: seven solution projects in total. The frontend's package.json defines its npm dependencies and scripts, while the .esproj provides Visual Studio solution integration.
+HealthMonitor.Api.csproj is the C# ASP.NET Core executable project. Domain, Application, and Infrastructure are its three C# class-library projects. The two test .csproj files are additional C# test projects, outside the four backend production projects. HealthMonitor.slnx includes these six .csproj files and the frontend health-monitor-web.esproj: seven solution projects in total. The frontend's package.json defines its npm dependencies and scripts, while the .esproj provides Visual Studio solution integration.
 
 ### Project reference rules
 Domain references no other solution project, EF Core package, or web framework. Application references Domain only. Infrastructure references Application and Domain. API references Application and Infrastructure as the dependency injection composition root; it maps Application read models to its public V1 DTOs. No inner layer references API. Unit tests reference Domain and Application; integration tests reference API.
@@ -210,7 +210,7 @@ dotnet add $api package Microsoft.EntityFrameworkCore.Design `
 dotnet add $api package Microsoft.AspNetCore.OpenApi `
   --version 10.0.11 --no-restore
 Get-ChildItem src/backend -Recurse -Filter *.csproj | ForEach-Object {
-  dotnet sln HealthMonitor.sln add $_.FullName
+  dotnet sln HealthMonitor.slnx add $_.FullName
 }
 ```
 
@@ -227,7 +227,7 @@ dotnet add $unit reference $domain $application
 dotnet add $integration reference $api
 dotnet add $integration package Microsoft.AspNetCore.Mvc.Testing `
   --version 10.0.11 --no-restore
-dotnet sln HealthMonitor.sln add $unit $integration
+dotnet sln HealthMonitor.slnx add $unit $integration
 dotnet restore $api
 dotnet build $api --no-restore
 ```
@@ -276,9 +276,9 @@ From the frontend directory, write this exact .esproj file. It integrates the Vi
 '@ | Set-Content health-monitor-web.esproj -Encoding utf8
 npm run build
 Set-Location ../../..
-dotnet sln HealthMonitor.sln add `
+dotnet sln HealthMonitor.slnx add `
   src/frontend/health-monitor-web/health-monitor-web.esproj
-dotnet sln HealthMonitor.sln list
+dotnet sln HealthMonitor.slnx list
 ```
 
 ShouldRunNpmInstall=false avoids an implicit npm install overwriting the explicit npm ci workflow. ShouldRunBuildScript=false keeps a backend build from implying frontend validation; npm run build is always a separate gate. Configure both API and frontend as startup projects in Visual Studio. Set the API profile ports to the values in section 6 and suppress its automatic browser launch. The CLI two-terminal workflow remains authoritative if JavaScript debugging integration varies by IDE servicing release.
@@ -838,6 +838,18 @@ Document inputs, outputs, nullability, units, UTC/time assumptions, validation, 
 Use concise inline comments for non-obvious algorithms, business decisions, security controls, and tradeoffs; explain why the code exists. Keep examples, OpenAPI descriptions, configuration/setup notes, and architecture decision records aligned with implemented behavior. Never put credentials or sensitive payloads in documentation. Avoid boilerplate comments, speculative claims, and comments that merely repeat the code.
 
 Documentation is part of each change and completion review: a maintainer must be able to understand the contract and safely modify the code. Review accuracy, consistency with tests, and unresolved assumptions before marking the affected step complete.
+
+Explicit code documentation standard. The following requirements are mandatory for each applicable change and supplement the documentation and incremental testing requirements in this section.
+
+XML documentation and contracts. Use C# XML documentation to state responsibilities and invariants for public types, interfaces, use cases, and nontrivial members. Document each parameter and return value, including nullability, units, and time assumptions; document applicable exceptions and the conditions that cause them. State contracts, including preconditions, postconditions, side effects, cancellation, and resource ownership. Use summary, remarks, param, returns, and exception elements as applicable; explain non-applicable elements rather than inventing behavior. Use equivalent TSDoc/JSDoc for TypeScript.
+
+Adjacent domain decision comments. Place concise comments immediately adjacent to each non-obvious domain or business decision branch, explaining WHY the rule selects that outcome and which invariant it preserves. In particular, explain why a new incident is opened versus why the existing incident is preserved, how recovery is recognized and applied, why threshold boundaries and timeout behavior have their specified semantics, and how incident identity and historical continuity are maintained. Document the rationale for the implemented rules without introducing new incident behavior or changing existing architecture decisions.
+
+Technical rationale comments. Place comments beside non-obvious technical, security, transaction, concurrency, ordering, and retention decisions. Explain the constraint or failure mode motivating the implementation, including relevant trust boundaries, atomicity, locking or race prevention, event ordering and replay, and retention or deletion choices. Keep broader architectural rationale in the appropriate architecture decision record and retain the local explanation needed to understand the code.
+
+Comment quality. Explain intent, constraints, and WHY; avoid redundant narration of signatures, assignments, conditions, or other self-evident code. Keep documentation accurate when behavior changes, and remove obsolete or misleading comments.
+
+Two-pass review and matching tests. Complete two explicit review passes before marking an affected step complete. Pass 1 checks implementation correctness against contracts, invariants, domain decisions, security and persistence behavior, and matching focused tests. Pass 2 checks XML documentation and adjacent rationale comments for completeness, accuracy, and agreement with the implementation and those tests. Add or update focused tests in the same step for the documented decision outcomes and boundaries, including incident opening versus preservation, recovery, thresholds, timeout behavior, and historical continuity where affected; use focused integration tests when transactions, concurrency, ordering, retention, or component interactions determine correctness. Record both review outcomes, test evidence, and unresolved gaps. Documentation review does not substitute for executable tests, and passing tests does not substitute for documentation review.
 
 ### Incremental unit and integration testing requirements
 Create focused automated tests alongside implementation in every step, rather than postponing test creation until Step 9. At minimum, add or update unit tests for new or changed business rules, validators, application behavior, and frontend logic. Add focused integration tests in the same step whenever correctness depends on PostgreSQL behavior, migrations, transactions, API serialization/middleware, module adapters, provider transport, or interaction between components. For tooling, deployment, and release work, execute relevant smoke/configuration checks and existing tests; record any genuinely inapplicable unit or integration cases with a reason.

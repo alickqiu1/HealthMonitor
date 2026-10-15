@@ -1,0 +1,23 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/" />
+  <Folder Name="/src/backend/">
+    <Project Path="src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj" />
+    <Project Path="src/backend/HealthMonitor.Application/HealthMonitor.Application.csproj" />
+    <Project Path="src/backend/HealthMonitor.Domain/HealthMonitor.Domain.csproj" />
+    <Project Path="src/backend/HealthMonitor.Infrastructure/HealthMonitor.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/frontend/">
+    <Project Path="src/frontend/health-monitor-web/health-monitor-web.esproj">
+      <Platform Project="AnyCPU" />
+    </Project>
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj" />
+    <Project Path="tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj" />
+  </Folder>
+</Solution>
