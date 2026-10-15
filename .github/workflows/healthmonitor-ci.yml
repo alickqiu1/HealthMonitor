@@ -1,0 +1,245 @@
+
+# HealthMonitor Continuous Integration
+#
+# Purpose:
+# Provide reproducible backend builds and automated testing
+# for contributors and technical reviewers.
+#
+# Developers do not need PostgreSQL or Docker installed locally
+# to build the application and run unit tests.
+#
+# CI provisions a disposable PostgreSQL service, validates
+# its identity, and applies the existing EF Core migrations.
+#
+# PostgreSQL integration testing begins with the
+# SimulationBatchRepository tests.
+#
+# Additional integration-test categories will be enabled
+# after their schema prerequisites and isolation behavior
+# have been verified.
+#
+# Security principles:
+# - Never connect to development or production Supabase.
+# - Use a dedicated, disposable PostgreSQL database.
+# - Require explicit authorization for database testing.
+# - Restrict workflow permissions to repository read access.
+# - Stop processing immediately when database setup fails.
+
+name: HealthMonitor CI
+
+on:
+  push:
+  pull_request:
+
+# The workflow does not modify repository contents,
+# publish packages, or deploy application resources.
+# Therefore, read-only repository permissions are sufficient.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    # GitHub Actions creates a dedicated PostgreSQL container
+    # for this job and disposes of it when the job completes.
+    #
+    # This keeps integration testing independent of Supabase
+    # and eliminates the need for contributors to configure
+    # their own database when submitting pull requests.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: healthmonitor_test
+          POSTGRES_USER: healthmonitor_test_user
+          POSTGRES_PASSWORD: ci_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U healthmonitor_test_user -d healthmonitor_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # These environment variables match the existing
+      # PostgreSqlTestFixture and database configuration.
+      #
+      # Integration testing requires explicit authorization,
+      # an exact test database name, and a localhost connection.
+      #
+      # This connection string is for the disposable CI database
+      # only. No production credentials are required.
+      HEALTHMONITOR_ENABLE_DB_TESTS: "true"
+
+      ConnectionStrings__HealthMonitorIntegrationTest: "Host=127.0.0.1;Port=5432;Database=healthmonitor_test;Username=healthmonitor_test_user;Password=ci_test_password"
+
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # Restore C# projects individually rather than building
+      # the complete HealthMonitor.slnx solution.
+      #
+      # The solution contains a Visual Studio JavaScript
+      # project (.esproj), which should have its own frontend
+      # CI steps using Node.js and npm.
+      #
+      # Separating these builds avoids introducing frontend
+      # tooling requirements into backend validation.
+      - name: Restore backend and test projects
+        run: |
+          dotnet restore src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj
+          dotnet restore tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj
+          dotnet restore tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj
+
+      - name: Build backend
+        run: |
+          dotnet build \
+            src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj \
+            --configuration Release \
+            --no-restore
+
+      # Unit tests run without a database connection.
+      #
+      # A PostgreSQL service failure must not change the
+      # meaning of unit-test assertions.
+      - name: Run unit tests
+        run: |
+          dotnet test \
+            tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj \
+            --configuration Release \
+            --no-restore
+
+      - name: Build integration-test project
+        run: |
+          dotnet build \
+            tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release \
+            --no-restore
+
+      # Restore the repository-pinned EF Core CLI.
+      #
+      # The tool version is defined in the committed
+      # dotnet-tools.json manifest at the repository root.
+      #
+      # This ensures contributors and CI use the same
+      # EF Core tooling version without global installation.
+      - name: Restore .NET tools
+        run: dotnet tool restore
+
+      # Install the PostgreSQL client explicitly rather than
+      # relying on tools that may happen to be preinstalled
+      # on a particular GitHub-hosted runner image.
+      #
+      # The client is used only for database identity
+      # verification; EF Core owns schema migrations.
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      # Verify database identity before running migrations.
+      #
+      # Checking the configured connection string alone is
+      # insufficient: the actual connected database must
+      # also have the expected identity.
+      #
+      # A wrong target fails CI before any schema changes.
+      - name: Verify isolated test database
+        shell: bash
+        env:
+          PGHOST: "127.0.0.1"
+          PGPORT: "5432"
+          PGDATABASE: "healthmonitor_test"
+          PGUSER: "healthmonitor_test_user"
+          PGPASSWORD: "ci_test_password"
+        run: |
+          set -euo pipefail
+
+          # Database operations must require explicit opt-in.
+          if [[ "$HEALTHMONITOR_ENABLE_DB_TESTS" != "true" ]]; then
+            echo "Integration database access is not enabled."
+            exit 1
+          fi
+
+          # Do not accept another host, port, or database.
+          # These values identify the disposable CI service.
+          if [[ "$PGHOST" != "127.0.0.1" ]] ||
+             [[ "$PGPORT" != "5432" ]] ||
+             [[ "$PGDATABASE" != "healthmonitor_test" ]]; then
+            echo "Unexpected integration database target."
+            exit 1
+          fi
+
+          # Verify the real database identity after connecting.
+          # -X ignores user startup configuration.
+          # -A -t returns an unformatted scalar result.
+          actual_db=$(psql -X -A -t \
+            -c "SELECT current_database()")
+
+          if [[ "$actual_db" != "healthmonitor_test" ]]; then
+            echo "Connected to an unexpected PostgreSQL database."
+            exit 1
+          fi
+
+          echo "Isolated PostgreSQL test database verified."
+
+      # Apply the existing EF Core Telemetry migrations.
+      #
+      # Database initialization and integration tests must
+      # operate against the same dedicated test database.
+      #
+      # The explicit --connection argument is the authoritative
+      # migration target, and the design-time Telemetry connection
+      # is overridden as an additional safeguard.
+      #
+      # These settings must never fall back to Supabase.
+      #
+      # Migration failure must stop CI. Integration tests must
+      # not execute against an incomplete or unexpected schema.
+      #
+      # Only Telemetry migrations are required for the current
+      # SimulationBatchRepository integration tests.
+      - name: Apply Telemetry migrations
+        shell: bash
+        env:
+          ConnectionStrings__Telemetry: "Host=127.0.0.1;Port=5432;Database=healthmonitor_test;Username=healthmonitor_test_user;Password=ci_test_password"
+        run: |
+          set -euo pipefail
+
+          dotnet ef database update \
+            --context TelemetryDbContext \
+            --project src/backend/HealthMonitor.Infrastructure/HealthMonitor.Infrastructure.csproj \
+            --startup-project src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj \
+            --connection "$ConnectionStrings__HealthMonitorIntegrationTest"
+
+
+      # Run real PostgreSQL integration tests only after the
+      # isolated database has been verified and migrated.
+      #
+      # Start with SimulationBatchRepositoryTests because these
+      # tests specifically exercise the Telemetry schema.
+      #
+      # Other integration-test categories will be enabled after
+      # their own database prerequisites have been verified.
+      #
+      # Do not suppress test failures or allow this step to
+      # continue on error. A failing persistence test must fail CI.
+      - name: Run SimulationBatchRepository integration tests
+        run: |
+          dotnet test \
+            tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release \
+            --no-build \
+            --filter "FullyQualifiedName~SimulationBatchRepositoryTests"

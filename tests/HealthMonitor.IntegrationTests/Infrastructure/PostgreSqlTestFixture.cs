@@ -127,7 +127,11 @@ internal sealed class PostgreSqlTestFixture
         // The initial implementation supports local PostgreSQL
         // and GitHub Actions services exposed through localhost.
         // Additional hosts require an explicit reviewed change.
-        string host = settings.Host;
+        //
+        // Host may be null when configuration is incomplete.
+        // Null and unapproved hosts must fail the allowlist check
+        // rather than falling back to an unintended server.
+        string? host = settings.Host;
 
         if (host is not ("localhost" or "127.0.0.1" or "::1"))
         {
