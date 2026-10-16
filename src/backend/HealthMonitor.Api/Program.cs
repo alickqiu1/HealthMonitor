@@ -1,4 +1,5 @@
 
+using HealthMonitor.Api.Composition;
 using HealthMonitor.Api.Provisioning;
 using HealthMonitor.Infrastructure.Data.DeviceContext;
 using HealthMonitor.Infrastructure.Data.TelemetryContext;
@@ -147,6 +148,8 @@ builder.Services.AddDbContext<TelemetryDbContext>(
 // ------------------------------------------------------------
 // 5. API services
 // ------------------------------------------------------------
+
+builder.Services.AddDeviceCatalog();
 
 builder.Services.AddControllers();
 
