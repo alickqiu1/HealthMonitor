@@ -4,10 +4,10 @@
 
 - Authority: [Technical Architecture Plan, Edition 1.5](../architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md). The owner approved this implementation roadmap in the originating chat; no architecture amendment is approved.
 - Steps 3.1-3.4 preserve historical conversation labels. Other substep labels are the approved implementation roadmap, not numbering defined by Edition 1.5.
-- Current position: Step 2 closure remains open. Step 2.B is approved as implemented and locally unit-tested following independent source-level review; several Step 3 components also exist.
-- Next development task: **2.C, Device Catalog Provisioning Verification**, including pending PostgreSQL catalog integration testing and CI verification. Step 2.A configuration reconciliation remains separate.
-- Current authorization: update this document and stop. This checkpoint does not authorize Step 2.C implementation.
-- Assessment basis: static repository inspection in the originating chat. No builds/tests, migrations, database access, or CI-run inspection were performed for that assessment or this document change.
+- Current position: Steps 2.B and 2.C are implemented, integration-tested, CI-verified, and completed within approved scope. Step 2 closure remains open: 2.A configuration architecture reconciliation and 2.D foundation closure review are pending. Step 3.4 remains unimplemented.
+- Next development task: **2.A, Configuration Architecture Decision**, followed by **2.D, foundation closure review**.
+- Current authorization: update this document and stop. This checkpoint does not authorize Step 2.A or Step 2.D implementation.
+- Evidence basis: the original repository assessment was static. Subsequent local results are Work-reported implementation-handoff evidence; run #4 results were visually verified by the owner and an independent reviewer from GitHub Actions screenshots. No builds/tests, migrations, database access, CI-run inspection, or TRX-content inspection were performed for this document update.
 
 ## Status and working rules
 
@@ -42,9 +42,9 @@ Milestones are **Planned** unless another implementation status is identified be
 | Label | Scope / deliverable | Prerequisites | Required verification / known position |
 | --- | --- | --- | --- |
 | 2.A | Compare configuration designs and precedence; recommend plan alignment or an explicit amendment. Preserve CI isolation and runtime/migration privilege separation. Obtain approval before connection-behavior changes; keep separate from 2.B. | Architecture comparison | Configuration selection, missing/mismatched settings, precedence, rejected test targets. Decision pending. |
-| 2.B | Minimal immutable catalog projections, justified Device query contract/EF implementation, Telemetry port, API adapter, DI. No unused interfaces or generic repositories. | Existing Device model/context | Active/retired/missing/mixed/empty results, relevant cancellation/failures, isolated PostgreSQL projections, adapter/module boundaries, applicable capacity behavior. Approved as implemented and locally unit-tested. Five PostgreSQL catalog integration-test cases are written but not executed; integration testing and CI verification remain pending under 2.C. |
-| 2.C | Repeatable serialized provisioning fixture, Device migrations and provisioning selection in isolated CI. Preserve unrelated data. | Verified isolated database; configuration resolution where relevant | First-run insertion, repeated provisioning, conflicts, rollback/state preservation, capacity and safe cleanup. Provisioner exists; first-run test skipped; repeat/conflict tests absent. |
-| 2.D | Focused models/mappings/migrations, catalog, provisioning, shared-pool, configuration/privilege and documentation review. Explicitly resolve missing write repository named in plan without speculative abstractions or silent amendment. | Resolved 2.A; completed 2.B-2.C | Both reviews, focused test evidence, reproducible isolated setup, explicit gap disposition before Step 2 closure. |
+| 2.B | Immutable shared device registration projection; separate Device application query boundary and Telemetry lookup port; API-owned forwarding adapter; scoped DI. Explicit lookups preserve retired registrations; fleet capacity queries count active registrations. No unused interfaces or generic repositories. | Existing Device model/context | Completed within approved scope: implemented, locally unit-tested, integration-tested, and CI-verified; independent source-level review approved. All five PostgreSQL catalog cases passed in run #4, with no failures or skips. This does not verify the atomic ingestion coordinator. |
+| 2.C | Existing isolated PostgreSQL fixture extended for validated data-source creation, Device isolation and ownership-aware cleanup. Catalog query tests enabled; comprehensive provisioning tests added. CI applies both Device and Telemetry migrations to verified disposable healthmonitor_test, with separate migration-history and required-schema checks. | Verified isolated database; configuration resolution where relevant | Completed within approved scope: implemented, integration-tested, and CI-verified. First-run insertion, repeat execution, conflicts, state preservation, capacity, cleanup, and provisioning concurrency covered; 13 provisioning cases passed. Three sequential groups passed all 27 cases in run #4. TRX checks require tests and theory variants and reject missing or skipped cases. Mid-insert failure injection remains deferred; see limitations below. |
+| 2.D | Focused models/mappings/migrations, catalog, provisioning, shared-pool, configuration/privilege and documentation review. Explicitly resolve missing write repository named in plan without speculative abstractions or silent amendment. | Resolved 2.A; completed 2.B-2.C | Pending: both reviews, focused test evidence, reproducible isolated setup, explicit gap disposition before Step 2 closure. |
 
 ### Step 3 telemetry lifecycle
 
@@ -92,22 +92,34 @@ Step 1 environment/tooling/hosting claims also need evidence; source alone canno
 | Item | Impact / resolution | Milestone |
 | --- | --- | --- |
 | Connection configuration differs | Plan uses Device/Telemetry keys and migration environment overrides; runtime uses HealthMonitorRuntime and local factories use HealthMonitor User Secrets. Compare before changing; preserve isolated test branch. No amendment approved. | 2.A |
-| Catalog query verification pending | Boundary implemented and locally unit-tested; independent source-level review approved. Five PostgreSQL cases are written but not executed; integration and CI verification remain pending. | 2.B / 2.C |
-| Provisioning evidence incomplete | First-run test skipped, assumes empty catalog, lacks cleanup. Current CI migrates only Telemetry and selects receipt tests. | 2.C |
+| Mid-insert failure injection deferred | Pre-insert conflict/capacity tests do not prove rollback after partial insertion. Deterministic mid-insert failure injection remains deferred. | 2.C limitation |
+| Capacity policy distinction unresolved | Provisioning counts all stored Device rows; active catalog queries count active rows. No architecture amendment has reconciled this distinction. | 2.A / 2.D |
+| Test serialization scope | Device integration-test serialization coordinates one test process. Independent concurrent processes against the same database are unsupported by this fixture design. | 2.C limitation |
 | Write repository named in plan absent | Explicit justification/architecture resolution needed; not an ingestion prerequisite. | 2.D |
-| Foundation closure unverified | Startup wiring/test source do not establish passing completion gates. | 2.D |
-| Hosted state unknown | Requires separately authorized operational verification. | 10 |
+| Foundation closure pending | Steps 2.B and 2.C are complete within scope; unresolved 2.A decisions and the 2.D review still prevent overall Step 2 closure. | 2.A / 2.D |
+| Hosted state unknown | No hosted Supabase verification is claimed; operational verification requires separate authorization. | 10 |
 
 ## Verification record
 
 | Evidence | Result | Qualification |
 | --- | --- | --- |
 | Historical nine PostgreSQL receipt repository tests | Owner reports GitHub Actions passed | Run URL/revision and independent verification not recorded. |
-| Repository assessment | Source/workflow inspected | Static evidence only; no build/test/database execution. |
-| Step 2.B independent source-level review | Approved by owner as implemented and locally unit-tested | PostgreSQL integration testing and CI verification remain pending under Step 2.C. |
-| Step 2.B full local unit suite | Reported result: 339 passed, 0 failed, 0 skipped | Recorded from the implementation handoff; not rerun for this documentation update. |
-| Step 2.B PostgreSQL catalog integration tests | Five cases written and compiled; not executed | Execution pending Step 2.C isolated database setup and authorization. No passing integration result claimed. |
-| Step 2.B CI verification | Pending | No CI verification of Step 2.B recorded. Historical receipt repository evidence does not verify these changes. |
+| Original repository assessment | Source/workflow inspected | Historical static evidence only; no build/test/database execution. |
+| Step 2.B independent source-level review | Approved as implemented and locally unit-tested | Subsequent PostgreSQL integration and CI verification recorded below; coordinator verification remains outside scope. |
+| Full local unit suite | 339 passed, 0 failed, 0 skipped | Work-reported implementation-handoff result; not rerun for this documentation update. |
+| Database-free TRX verifier self-tests | 18 passed | Work-reported implementation-handoff result; not rerun here. |
+| Integration-test project build | Passed; zero errors and warnings | Work-reported implementation-handoff result; not rebuilt here. |
+| Steps 2.B / 2.C CI verification | healthmonitor-ci.yml run #4, commit afc451c: Success; approximately 1 minute 42 seconds | Owner and independent reviewer visually verified GitHub Actions screenshots. Not locally reproduced database executions or inspected TRX contents; no run URL supplied. |
+| Run #4 migration and verification steps | Both Device and Telemetry schema migrations and validation succeeded; separate migration-history and required-schema checks included. Receipt, catalog, and provisioning TRX verification steps succeeded. | Same screenshot-confirmed CI evidence; applies to the explicitly validated disposable healthmonitor_test database, not hosted Supabase. |
 | This tracking-document change | Documentation only | No application implementation, tests, migrations or database access. Final document review reported in the accompanying change report. |
+
+GitHub Actions run #4 PostgreSQL results (owner and independent reviewer screenshot-confirmed):
+
+| Test group | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| SimulationBatchRepository | 9 | 0 | 0 |
+| DeviceCatalogQueries | 5 | 0 | 0 |
+| DeviceCatalogProvisioner | 13 | 0 | 0 |
+| **Total** | **27** | **0** | **0** |
 
 For later checks, record date, revision/working-tree scope, check scope, result, and evidence link. Update relevant milestone status without extending one passing suite to unrelated functionality.
