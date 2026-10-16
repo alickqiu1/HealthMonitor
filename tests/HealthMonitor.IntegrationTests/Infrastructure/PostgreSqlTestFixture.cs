@@ -63,28 +63,41 @@ internal sealed class PostgreSqlTestFixture
         {
             await connection.OpenAsync(cancellationToken);
 
-            // Verify the actual database identity after connecting.
-            await using var command = new NpgsqlCommand(
-                "SELECT current_database()",
-                connection);
-
-            object? result =
-                await command.ExecuteScalarAsync(cancellationToken);
-
-            if (!string.Equals(
-                    result as string,
-                    RequiredDatabaseName,
-                    StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    "Connected to an unexpected PostgreSQL database.");
-            }
+            await VerifyIdentityAsync(connection, cancellationToken);
 
             return connection;
         }
         catch
         {
             await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    /// <summary>Creates a caller-owned data source verified through one of its own connections.</summary>
+    /// <param name="cancellationToken">Cancellation for initial connection and identity verification.</param>
+    /// <returns>A data source which the caller must dispose after all provisioner operations finish.</returns>
+    /// <exception cref="InvalidOperationException">Authorization, target, or actual identity is invalid.</exception>
+    /// <remarks>
+    /// Build from the original validated settings, not an opened connection's potentially
+    /// password-redacted ConnectionString. This does not enable credential persistence or logging.
+    /// Every connection from this source uses the same validated local configuration.
+    /// </remarks>
+    public async Task<NpgsqlDataSource> CreateDataSourceAsync(CancellationToken cancellationToken = default)
+    {
+        ValidateExplicitOptIn();
+        string connectionString = IntegrationTestDatabaseConfiguration.GetConnectionString();
+        ValidateConnectionTarget(new NpgsqlConnectionStringBuilder(connectionString));
+        var source = NpgsqlDataSource.Create(connectionString);
+        try
+        {
+            await using var connection = await source.OpenConnectionAsync(cancellationToken);
+            await VerifyIdentityAsync(connection, cancellationToken);
+            return source;
+        }
+        catch
+        {
+            await source.DisposeAsync();
             throw;
         }
     }
@@ -138,5 +151,13 @@ internal sealed class PostgreSqlTestFixture
             throw new InvalidOperationException(
                 "Integration tests require a local PostgreSQL host.");
         }
+    }
+    /// <summary>Checks the connected identity rather than trusting configuration alone.</summary>
+    private static async Task VerifyIdentityAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("SELECT current_database()", connection);
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
+        if (!string.Equals(result as string, RequiredDatabaseName, StringComparison.Ordinal))
+            throw new InvalidOperationException("Connected to an unexpected PostgreSQL database.");
     }
 }

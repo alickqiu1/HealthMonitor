@@ -11,16 +11,15 @@ namespace HealthMonitor.IntegrationTests.Device;
 
 /// <summary>Exercises real PostgreSQL catalog projections inside rollback-only test transactions.</summary>
 /// <remarks>
-/// Execution is pending Step 2.C: both Device migrations and a verified test fixture are required.
+/// Requires both Device migrations and explicitly authorized, exclusive use of the test database.
 /// The existing fixture must authorize and verify healthmonitor_test before context creation.
 /// No migrations, commits, deletes, schema operations, or changes to existing rows occur here.
 /// Repeatable-read snapshots isolate each scenario from unrelated concurrent catalog inserts.
 /// Context and transaction disposal roll back only this test's new rows even on assertion failure.
 /// </remarks>
+[Collection(DeviceDatabaseCollection.Name)]
 public sealed class DeviceCatalogQueriesTests
 {
-    private const string Pending = "Pending Step 2.C: verified healthmonitor_test with Device migrations and explicit execution authorization.";
-
     private static DeviceDbContext CreateContext(NpgsqlConnection connection) =>
         new(new DbContextOptionsBuilder<DeviceDbContext>().UseNpgsql(connection).Options);
 
@@ -37,7 +36,7 @@ public sealed class DeviceCatalogQueriesTests
         new(device.Id, device.DisplayName, device.AssetTag, device.SiteCode,
             device.DeviceType, device.RetiredAtUtc.HasValue);
 
-    [Fact(Skip = Pending)]
+    [Fact]
     public async Task GetByIdsAsync_MixedDuplicatesUnknownAndRetired_ProjectsDistinctOrderedUntrackedRecords()
     {
         await using var connection = await new PostgreSqlTestFixture().OpenConnectionAsync();
@@ -62,7 +61,7 @@ public sealed class DeviceCatalogQueriesTests
         Assert.Empty(context.ChangeTracker.Entries());
     }
 
-    [Fact(Skip = Pending)]
+    [Fact]
     public async Task GetActiveAsync_ExcludesRetiredAndPreservesCompleteOrderedProjection()
     {
         await using var connection = await new PostgreSqlTestFixture().OpenConnectionAsync();
@@ -84,7 +83,7 @@ public sealed class DeviceCatalogQueriesTests
         Assert.Empty(context.ChangeTracker.Entries());
     }
 
-    [Theory(Skip = Pending)]
+    [Theory]
     [InlineData(1000)]
     [InlineData(1001)]
     public async Task GetActiveAsync_ExactCapacityAndOverflow_AreNotSilentlyTruncated(int targetCount)
@@ -106,7 +105,7 @@ public sealed class DeviceCatalogQueriesTests
         Assert.Empty(context.ChangeTracker.Entries());
     }
 
-    [Fact(Skip = Pending)]
+    [Fact]
     public async Task Queries_PreCanceledToken_PropagatesCancellation()
     {
         await using var connection = await new PostgreSqlTestFixture().OpenConnectionAsync();

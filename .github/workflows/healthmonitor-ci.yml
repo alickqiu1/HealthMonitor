@@ -11,12 +11,10 @@
 # CI provisions a disposable PostgreSQL service, validates
 # its identity, and applies the existing EF Core migrations.
 #
-# PostgreSQL integration testing begins with the
-# SimulationBatchRepository tests.
+# PostgreSQL integration testing covers receipts, Device queries,
+# and committed catalog provisioning in the disposable service.
 #
-# Additional integration-test categories will be enabled
-# after their schema prerequisites and isolation behavior
-# have been verified.
+# TRX method and theory inventories reject missing or skipped verification.
 #
 # Security principles:
 # - Never connect to development or production Supabase.
@@ -156,7 +154,7 @@ jobs:
       # also have the expected identity.
       #
       # A wrong target fails CI before any schema changes.
-      - name: Verify isolated test database
+      - name: Verify isolated test database and migrate both schemas
         shell: bash
         env:
           PGHOST: "127.0.0.1"
@@ -195,28 +193,13 @@ jobs:
 
           echo "Isolated PostgreSQL test database verified."
 
-      # Apply the existing EF Core Telemetry migrations.
-      #
-      # Database initialization and integration tests must
-      # operate against the same dedicated test database.
-      #
-      # The explicit --connection argument is the authoritative
-      # migration target, and the design-time Telemetry connection
-      # is overridden as an additional safeguard.
-      #
-      # These settings must never fall back to Supabase.
-      #
-      # Migration failure must stop CI. Integration tests must
-      # not execute against an incomplete or unexpected schema.
-      #
-      # Only Telemetry migrations are required for the current
-      # SimulationBatchRepository integration tests.
-      - name: Apply Telemetry migrations
-        shell: bash
-        env:
-          ConnectionStrings__Telemetry: "Host=127.0.0.1;Port=5432;Database=healthmonitor_test;Username=healthmonitor_test_user;Password=ci_test_password"
-        run: |
-          set -euo pipefail
+          # Factories use the same validated isolated-test configuration for both contexts.
+          # Keep Device before Telemetry and preserve each schema's migration history.
+          dotnet ef database update \
+            --context DeviceDbContext \
+            --project src/backend/HealthMonitor.Infrastructure/HealthMonitor.Infrastructure.csproj \
+            --startup-project src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj \
+            --connection "$ConnectionStrings__HealthMonitorIntegrationTest"
 
           dotnet ef database update \
             --context TelemetryDbContext \
@@ -224,22 +207,88 @@ jobs:
             --startup-project src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj \
             --connection "$ConnectionStrings__HealthMonitorIntegrationTest"
 
+          # Missing objects or migration entries must stop the job before test execution.
+          psql -X --set=ON_ERROR_STOP=on <<'SQL'
+          DO $verify$
+          DECLARE required_table text;
+          BEGIN
+            FOREACH required_table IN ARRAY ARRAY[
+              'device.monitored_devices', 'device.__ef_migrations_history',
+              'telemetry.telemetry_pings', 'telemetry.incident_logs',
+              'telemetry.device_telemetry_state', 'telemetry.simulation_batches',
+              'telemetry.__ef_migrations_history']
+            LOOP
+              IF to_regclass(required_table) IS NULL THEN
+                RAISE EXCEPTION 'Required test table missing: %', required_table;
+              END IF;
+            END LOOP;
+            IF (SELECT count(*) FROM device.__ef_migrations_history
+                WHERE "MigrationId" IN ('20261014182737_InitialDeviceSchema',
+                  '20261014220912_AlignDeviceSchema')) <> 2 THEN
+              RAISE EXCEPTION 'Device migration history incomplete';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM telemetry.__ef_migrations_history
+                WHERE "MigrationId" = '20261014230144_InitialTelemetrySchema') THEN
+              RAISE EXCEPTION 'Telemetry migration history incomplete';
+            END IF;
+          END;
+          $verify$;
+          SQL
 
-      # Run real PostgreSQL integration tests only after the
-      # isolated database has been verified and migrated.
-      #
-      # Start with SimulationBatchRepositoryTests because these
-      # tests specifically exercise the Telemetry schema.
-      #
-      # Other integration-test categories will be enabled after
-      # their own database prerequisites have been verified.
-      #
-      # Do not suppress test failures or allow this step to
-      # continue on error. A failing persistence test must fail CI.
+      - name: Test integration result verifier without a database
+        shell: pwsh
+        run: ./scripts/Test-IntegrationTestResultVerification.ps1
+
+      # Groups are intentionally sequential: provisioning commits fixed identities,
+      # while catalog boundary tests measure complete active-fleet counts.
       - name: Run SimulationBatchRepository integration tests
+        shell: bash
         run: |
-          dotnet test \
-            tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
-            --configuration Release \
-            --no-build \
-            --filter "FullyQualifiedName~SimulationBatchRepositoryTests"
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Telemetry.SimulationBatchRepositoryTests" \
+            --logger "trx;LogFileName=receipts.trx" \
+            --results-directory artifacts/test-results/receipts
+
+      - name: Verify receipt test execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/receipts/receipts.trx -Group Receipts
+
+      - name: Run DeviceCatalogQueries integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Device.DeviceCatalogQueriesTests" \
+            --logger "trx;LogFileName=catalog.trx" \
+            --results-directory artifacts/test-results/catalog
+
+      - name: Verify catalog test execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/catalog/catalog.trx -Group Catalog
+
+      - name: Run DeviceCatalogProvisioner integration tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Provisioning.DeviceCatalogProvisionerTests" \
+            --logger "trx;LogFileName=provisioning.trx" \
+            --results-directory artifacts/test-results/provisioning
+
+      - name: Verify provisioning test execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/provisioning/provisioning.trx -Group Provisioning
+
+      - name: Upload integration test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: artifacts/test-results/**/*.trx
+          if-no-files-found: warn
