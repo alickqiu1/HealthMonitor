@@ -209,6 +209,14 @@ public interface ITelemetryIngestionService
     /// On failure before commit, the transaction must be
     /// rolled back or disposed without committing.
     ///
+    /// Use a fresh DI scope for each write attempt. A transaction implementation may
+    /// dispose its scoped context after an admitted failure to prevent later persistence
+    /// of abandoned mutations. Retry an uncertain outcome with the same BatchId.
+    ///
+    /// An initial receipt miss can fail preliminary freshness or eligibility validation
+    /// while another caller commits. Only attempts reaching the transaction perform the
+    /// locked receipt recheck; a subsequent retry can replay the committed receipt.
+    ///
     /// Cancellation does not guarantee rollback if the
     /// transaction has already committed successfully.
     /// </remarks>

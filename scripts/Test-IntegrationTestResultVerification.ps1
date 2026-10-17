@@ -46,6 +46,36 @@ $fixtures = @{
             'Capacity_ExactLimitSucceeds_OverflowRejects(projectedCount: 1001)',
             'ConcurrentProvisioning_InsertsOnce')
     }
+    Ingestion = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionTransactionTests'
+        Cases = @('ConfirmedCommit_CleanupFailureStillReturnsSavedResult',
+            'PrimaryFailureType_SurvivesCleanupFailure(kind: "conflict")',
+            'PrimaryFailureType_SurvivesCleanupFailure(kind: "busy")',
+            'PrimaryFailureType_SurvivesCleanupFailure(kind: "cancellation")',
+            'NewBatch_PersistsCompleteAtomicResult(scenario: "Healthy")',
+            'NewBatch_PersistsCompleteAtomicResult(scenario: "HighLatency")',
+            'NewBatch_PersistsCompleteAtomicResult(scenario: "HighCpu")',
+            'NewBatch_PersistsCompleteAtomicResult(scenario: "Timeout")',
+            'MatchingReplay_AfterRetirementAndExpiry_PreservesSavedResult', 'ConflictingReplay_DoesNotWrite',
+            'IneligibleNewBatch_RejectsWithoutPersistence(registrationState: "missing")',
+            'IneligibleNewBatch_RejectsWithoutPersistence(registrationState: "retired")',
+            'FailureAfterExecutedWrites_RollsBackAndInvalidatesContext', 'ExceptionAfterRealCommit_SameIdRetryReplays',
+            'EqualObservationAccepted_RegressingObservationRejects(chronology: "equal")',
+            'EqualObservationAccepted_RegressingObservationRejects(chronology: "regressing")',
+            'TimeoutPreservesMeasurementIncidents_HealthyResolvesAll',
+            'CallerTransaction_IsRejectedAndRemainsOwned(transactionKind: "context")',
+            'CallerTransaction_IsRejectedAndRemainsOwned(transactionKind: "enlisted")',
+            'OneWriteAttempt_RejectsSecondBatchWithoutChangingFirst', 'RepeatedViolation_PreservesOriginalIncidentIdentityAndOpening',
+            'MissingReceiptOutsideFreshnessWindow_RejectsWithoutPersistence(direction: "expired")',
+            'MissingReceiptOutsideFreshnessWindow_RejectsWithoutPersistence(direction: "future")')
+    }
+    Locks = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionLockTests'
+        Cases = @('AcquiredLock_ExcludesOthers_EndsWithTransaction(completion: "commit")',
+            'AcquiredLock_ExcludesOthers_EndsWithTransaction(completion: "rollback")',
+            'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
+            'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
+    }
 }
 
 function New-SyntheticReport([string]$Group) {
@@ -84,7 +114,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

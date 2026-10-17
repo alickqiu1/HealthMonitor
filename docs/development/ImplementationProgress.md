@@ -4,10 +4,10 @@
 
 - Authority: [Technical Architecture Plan, Edition 1.5](../architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md). The owner approved this implementation roadmap in the originating chat; the owner approved the Step 2.A configuration amendment (minimal hybrid reconciliation), now recorded in Edition 1.5. The owner also approved the focused Step 2.D type/capacity corrections, Device write-repository deferral, and as-built documentation exceptions. Other architecture decisions remain unchanged.
 - Steps 3.1-3.4 preserve historical conversation labels. Other substep labels are the approved implementation roadmap, not numbering defined by Edition 1.5.
-- Current position: **Step 2 — Device Foundation: Completed within approved scope.** Steps 2.A, 2.B, 2.C, and 2.D are completed, independently reviewed, and CI-verified within approved scope. The owner confirmed independent source/documentation approval and fresh CI verification of the Step 2.D corrections. Deferred and hosted operational requirements below remain outstanding. Step 3.4 remains unimplemented.
-- Next development milestone: **Step 3.4 — Atomic Ingestion Transaction Coordinator**. Implementation is unstarted and requires separate planning, independent review, and explicit authorization.
-- Current authorization: record formal Step 2 closure in this document and stop. No staging, commit/push, database execution, or Step 3.4 implementation.
-- Evidence basis: the original repository assessment was static. Run #4 results were visually verified by the owner and an independent reviewer from GitHub Actions screenshots. Later Step 2.A and Step 2.D review/CI results are owner-confirmed and recorded separately from historical local execution. This closure update reran no tests and performed no builds, database connections, migrations, secret reads, hosted verification, or CI-run inspection.
+- Current position: **Step 2 — Device Foundation: Completed within approved scope.** Steps 2.A, 2.B, 2.C, and 2.D are completed, independently reviewed, and CI-verified within approved scope. The owner confirmed independent source/documentation approval and fresh CI verification of the Step 2.D corrections. Deferred and hosted operational requirements below remain outstanding. Step 3.4 implementation and focused test source are independently reviewed and locally unit-tested; focused PostgreSQL execution and CI verification remain outstanding. Step 3.4 is not closed.
+- Current development milestone: **Step 3.4 — Atomic Ingestion Transaction Coordinator**. The revised design passed independent review; the owner authorized continuation after reviewer approval. Application orchestration, Infrastructure transaction coordination, scoped composition, and focused PostgreSQL test source are implemented and independently reviewed. The next gate is explicitly authorized disposable-database execution and CI evidence.
+- Current authorization: proceed incrementally through the Step 3 review trial, act on routine reviewer corrections, and continue after reviewer approval within approved scope. Database execution, migrations, hosted access, staging, commits, and pushes still require explicit permission; reviewer approval does not grant that permission.
+- Evidence basis: the original repository assessment was static. Run #4 results were visually verified by the owner and an independent reviewer from GitHub Actions screenshots. Later Step 2.A and Step 2.D review/CI results are owner-confirmed and recorded separately from historical local execution. The historical Step 2 closure update reran no tests and performed no builds, database connections, migrations, secret reads, hosted verification, or CI-run inspection. Step 3.4 local execution is recorded separately below.
 
 ## Status and working rules
 
@@ -29,7 +29,7 @@
 | 3.1 - Incident Observation Policy | Implemented; inspected | Unit tests exist | Owner reports unit-tested; not rerun here. No independently verified CI result recorded. |
 | 3.2 - Incident Lifecycle Processor | Implemented; inspected | Unit tests exist | Owner reports unit-tested; not rerun here. No independently verified CI result recorded. |
 | 3.3 - Telemetry Ingestion Foundations | Implemented: contracts, canonicalization, UUIDv7 validation, scenarios, receipt repository, advisory-lock helper | Unit tests and nine receipt repository integration tests exist | Owner reports nine PostgreSQL repository tests passed in GitHub Actions. Run not independently inspected. Does not verify complete ingestion or advisory locking. |
-| 3.4 - Atomic Telemetry Ingestion Transaction Coordinator | Planned; implementation not found | Coordinator tests not found | Not run; no CI evidence recorded. |
+| 3.4 - Atomic Telemetry Ingestion Transaction Coordinator | Implemented and independently source-reviewed; awaiting PostgreSQL/CI verification before closure | 39 database-free ingestion/composition cases; 23 atomic ingestion and 5 lock PostgreSQL cases written and compiled | Development executed full unit suite: 475 passed, 0 failed, 0 skipped (2026-10-17). 20 database-free verifier self-tests passed. New PostgreSQL cases have not executed; no Step 3.4 CI verification. |
 
 Sources: [Application](../../src/backend/HealthMonitor.Application/Telemetry), [Domain](../../src/backend/HealthMonitor.Domain/Telemetry), [Infrastructure](../../src/backend/HealthMonitor.Infrastructure/TelemetryContext), [unit tests](../../tests/HealthMonitor.UnitTests), [integration tests](../../tests/HealthMonitor.IntegrationTests), [workflow](../../.github/workflows/healthmonitor-ci.yml).
 
@@ -151,3 +151,27 @@ GitHub Actions run #4 PostgreSQL results (owner and independent reviewer screens
 | **Total** | **27** | **0** | **0** |
 
 For later checks, record date, revision/working-tree scope, check scope, result, and evidence link. Update relevant milestone status without extending one passing suite to unrelated functionality.
+
+Step 3.4 first Application slice (2026-10-17; baseline 549b4c659db3998055f0bca7f0fe453b41545bb8):
+
+| Evidence | Result | Qualification |
+| --- | --- | --- |
+| Revised implementation design | Independent reviewer approved after checking source contracts, architecture ordering, registration, and timestamp rules | Retains the existing preliminary-validation race qualification and one-attempt scoped-context ownership. No architecture amendment or database authorization granted. |
+| Application source review | Approved; reviewer independently matched all five submitted file hashes and inspected source/tests; no blocking findings | Covers Application orchestration and its tests only. Review did not rerun tests or establish persistence atomicity. |
+| Focused Application unit tests | 34 passed, 0 failed, 0 skipped | Executed by Development using Release and --no-restore; verifies replay/validation ordering, input snapshot, boundary inputs, cancellation, and dependency failures through test doubles. |
+| Full local unit suite | 470 passed, 0 failed, 0 skipped | Executed by Development using the same Release build with --no-build --no-restore. Historical 436-case evidence remains separate. |
+| Syntax/XML and whitespace checks | Passed for the five new C# files | Roslyn parsing and direct trailing-whitespace checks; no PostgreSQL execution. |
+| Outstanding at the first Application checkpoint | Infrastructure transaction adapter, scoped composition, focused real transaction/lock tests, and CI verification | At that checkpoint the transaction port was not yet implemented or registered. The subsequent Infrastructure checkpoint below supersedes its implementation status; database verification remains outstanding. |
+
+Step 3.4 Infrastructure and focused test-source checkpoint (2026-10-17; same uncommitted baseline):
+
+| Evidence | Result | Qualification |
+| --- | --- | --- |
+| Independent source review | Approved after revisions; no blocking source findings | Reviewer checked scoped context identity, primary exception preservation, ownership/cleanup barriers, exact test inventories, and test-only failure injection. No tests were rerun by the reviewer. |
+| Full local unit suite | 475 passed, 0 failed, 0 skipped | Executed by Development after Infrastructure and composition corrections. Includes 34 Application cases and 5 composition/admission cases; historical 470-case run remains separate. |
+| Integration-test project build | Passed with zero warnings and errors | Release, --no-restore, XML documentation generation enabled; missing-documentation warning CS1591 suppressed. Compilation is not PostgreSQL execution evidence. |
+| Database-free TRX verifier self-tests | 20 passed | Executed against synthetic reports, including the new exact Ingestion and Locks inventories. Parser argument support was not broadened. |
+| Focused PostgreSQL test inventory | 23 atomic ingestion cases and 5 advisory-lock cases written and compiled, not executed | Includes post-SQL rollback, independent committed-state reads, replay/conflict, incidents, timestamp rules, caller-owned transaction rejection, failed-context invalidation, lock contention/cancellation/release and duplicate recheck. |
+| Commit/cleanup failure qualification | Test-only EF interception added | Postcommit interception simulates an exception after a real commit; it is not evidence of actual network loss. All such PostgreSQL cases remain unexecuted. Cleanup failures preserve the primary exception type and cannot revoke acknowledged success. |
+| CI workflow source | Two sequential groups and exact TRX inventories added | Existing disposable target validation and migration selection unchanged. Workflow source is not CI verification; no hosted Supabase access is claimed. |
+| Remaining gate | Authorized disposable PostgreSQL execution and fresh CI results | No database operations, migrations, staging, commits, or pushes performed. Step 3.4 cannot close on unit tests/source review alone. Step 3.5 and the producer/retention milestones have not started. |

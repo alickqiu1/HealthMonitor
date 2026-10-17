@@ -285,6 +285,40 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/provisioning/provisioning.trx -Group Provisioning
 
+      # Ingestion groups share the fixed advisory lock and run sequentially in this job's
+      # already verified disposable service. Hang detection must never enable unsafe cleanup.
+      - name: Run atomic ingestion integration tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionTransactionTests" \
+            --logger "trx;LogFileName=ingestion.trx" \
+            --results-directory artifacts/test-results/ingestion
+
+      - name: Verify ingestion test execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/ingestion/ingestion.trx -Group Ingestion
+
+      - name: Run ingestion lock integration tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionLockTests" \
+            --logger "trx;LogFileName=ingestion-locks.trx" \
+            --results-directory artifacts/test-results/ingestion-locks
+
+      - name: Verify ingestion lock test execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/ingestion-locks/ingestion-locks.trx -Group Locks
+
       - name: Upload integration test reports
         if: always()
         uses: actions/upload-artifact@v4

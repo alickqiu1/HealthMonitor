@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -59,6 +59,34 @@ $inventories = @{
             RetiredSeed_RejectsWithoutReactivation = @('')
             Capacity_ExactLimitSucceeds_OverflowRejects = @('projectedCount=1000', 'projectedCount=1001')
             ConcurrentProvisioning_InsertsOnce = @('')
+        }
+    }
+    Ingestion = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionTransactionTests'
+        Methods = @{
+            ConfirmedCommit_CleanupFailureStillReturnsSavedResult = @('')
+            PrimaryFailureType_SurvivesCleanupFailure = @('kind=conflict', 'kind=busy', 'kind=cancellation')
+            NewBatch_PersistsCompleteAtomicResult = @('scenario=Healthy', 'scenario=HighLatency', 'scenario=HighCpu', 'scenario=Timeout')
+            MatchingReplay_AfterRetirementAndExpiry_PreservesSavedResult = @('')
+            ConflictingReplay_DoesNotWrite = @('')
+            IneligibleNewBatch_RejectsWithoutPersistence = @('registrationState=missing', 'registrationState=retired')
+            FailureAfterExecutedWrites_RollsBackAndInvalidatesContext = @('')
+            ExceptionAfterRealCommit_SameIdRetryReplays = @('')
+            EqualObservationAccepted_RegressingObservationRejects = @('chronology=equal', 'chronology=regressing')
+            TimeoutPreservesMeasurementIncidents_HealthyResolvesAll = @('')
+            CallerTransaction_IsRejectedAndRemainsOwned = @('transactionKind=context', 'transactionKind=enlisted')
+            OneWriteAttempt_RejectsSecondBatchWithoutChangingFirst = @('')
+            RepeatedViolation_PreservesOriginalIncidentIdentityAndOpening = @('')
+            MissingReceiptOutsideFreshnessWindow_RejectsWithoutPersistence = @('direction=expired', 'direction=future')
+        }
+    }
+    Locks = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionLockTests'
+        Methods = @{
+            AcquiredLock_ExcludesOthers_EndsWithTransaction = @('completion=commit', 'completion=rollback')
+            Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
+            CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
+            DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
         }
     }
 }
