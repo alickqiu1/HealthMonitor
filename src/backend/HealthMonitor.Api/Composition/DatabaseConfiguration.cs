@@ -6,7 +6,12 @@ using Npgsql;
 namespace HealthMonitor.Api.Composition;
 
 /// <summary>Validates database settings without connecting and owns the shared runtime pool registration.</summary>
-/// <remarks>Configuration selection cannot establish certificate trust, target identity, or effective database grants.</remarks>
+/// <remarks>
+/// Only ConnectionStrings:HealthMonitorRuntime supplies runtime credentials; maintenance
+/// and integration-test settings are separate security boundaries, never fallback values.
+/// Validation checks configuration without connecting. It cannot establish certificate trust,
+/// target identity, effective grants, inherited privileges, or runtime DDL denial.
+/// </remarks>
 internal static class DatabaseConfiguration
 {
     // Edition 1.5 budgets ten runtime connections per API process, separately from maintenance.
@@ -42,7 +47,15 @@ internal static class DatabaseConfiguration
     /// <param name="services">The API composition container.</param>
     /// <param name="configuration">Application configuration validated immediately, before host construction.</param>
     /// <param name="environmentName">The resolved application environment.</param>
-    /// <remarks>Building a data source does not open a connection. Migration credentials are not registered here.</remarks>
+    /// <exception cref="InvalidOperationException">Runtime configuration violates the required settings or security policy.</exception>
+    /// <remarks>
+    /// One singleton shares the ten-connection budget across both contexts rather than creating
+    /// a pool per module. DI disposes the source; scoped contexts borrow it and remain independently
+    /// mapped to their own schemas and migration histories. Sharing a pool does not merge ownership
+    /// or make a DbContext safe for parallel use. The budget is per API process, not per deployment.
+    /// Building a data source does not open a connection. Migration credentials are not registered here.
+    /// Actual least-privilege grants and hosted TLS trust require separate operational verification.
+    /// </remarks>
     internal static void AddRuntimeDatabase(IServiceCollection services, IConfiguration configuration, string environmentName)
     {
         string connectionString = GetRuntimeConnectionString(configuration, environmentName);

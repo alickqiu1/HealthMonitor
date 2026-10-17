@@ -28,11 +28,17 @@ public sealed class DatabaseConfigurationTests
     private static string Runtime(string? value, string environment = "Development") =>
         DatabaseConfiguration.GetRuntimeConnectionString(Config((RuntimeKey, value)), environment);
 
+    /// <summary>Exercises maintenance selection with synthetic inputs and no process-environment mutation.</summary>
+    /// <param name="environment">Named fictional values; omitted keys read as absent.</param>
+    /// <param name="secret">Optional synthetic loader; the default fails if selection unexpectedly reaches secrets.</param>
+    /// <returns>The selected configuration string without opening a database connection.</returns>
     private static string Migration(Dictionary<string, string?> environment, Func<string?>? secret = null) =>
         DesignTimeDatabaseConfiguration.GetMigrationConnectionString(
             key => environment.GetValueOrDefault(key),
             secret ?? (() => throw new InvalidOperationException("Secret loader must not run.")));
 
+    /// <summary>Checks the full exception text so nested provider diagnostics cannot leak synthetic markers.</summary>
+    /// <param name="action">Invalid configuration operation expected to fail with a sanitized InvalidOperationException.</param>
     private static void AssertSanitized(Action action)
     {
         var error = Assert.Throws<InvalidOperationException>(action);
@@ -338,6 +344,9 @@ public sealed class DatabaseConfigurationTests
         Assert.Throws<InvalidOperationException>(() => new TelemetryDbContextFactory(Resolve).CreateDbContext([]));
     }
 
+    /// <summary>Inspects relational options without opening a connection or querying migration tables.</summary>
+    /// <param name="context">Configured Device or Telemetry context.</param>
+    /// <param name="schema">Expected bounded-context migration-history schema.</param>
     private static void AssertHistory(DbContext context, string schema)
     {
         var options = context.GetService<IDbContextOptions>().Extensions.OfType<RelationalOptionsExtension>().Single();

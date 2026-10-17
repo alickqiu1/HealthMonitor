@@ -10,9 +10,11 @@ namespace HealthMonitor.IntegrationTests.Infrastructure;
 /// Integration tests must never use the application's normal Supabase
 /// database or its runtime and migration connection strings.
 ///
-/// The fixture requires an explicit opt-in, a dedicated database name,
-/// and a local PostgreSQL host. These safeguards prevent accidental
-/// execution against the project's existing hosted database.
+/// The fixture requires explicit opt-in, an exact database name, and a loopback host,
+/// then checks current_database() after connecting. It does not verify the server's role,
+/// port, grants, or disposability; the design-time migration selector has stricter target rules.
+/// The caller must supply an exclusively owned disposable local database. Loopback settings
+/// do not establish that a proxy or tunnel is safe, and must never forward to hosted PostgreSQL.
 ///
 /// This fixture does not create, modify, or delete database objects.
 /// Individual tests are responsible for isolating their own data.
@@ -82,6 +84,8 @@ internal sealed class PostgreSqlTestFixture
     /// Build from the original validated settings, not an opened connection's potentially
     /// password-redacted ConnectionString. This does not enable credential persistence or logging.
     /// Every connection from this source uses the same validated local configuration.
+    /// The initial identity query checks the database name only; it does not recheck every
+    /// later pooled connection or grant permission to adopt data left by another process.
     /// </remarks>
     public async Task<NpgsqlDataSource> CreateDataSourceAsync(CancellationToken cancellationToken = default)
     {
@@ -152,7 +156,11 @@ internal sealed class PostgreSqlTestFixture
                 "Integration tests require a local PostgreSQL host.");
         }
     }
-    /// <summary>Checks the connected identity rather than trusting configuration alone.</summary>
+    /// <summary>Checks the connected database name rather than trusting configuration alone.</summary>
+    /// <param name="connection">Open, caller-owned connection with loopback settings already validated.</param>
+    /// <param name="cancellationToken">Cancellation for the identity query.</param>
+    /// <returns>Completion when current_database() matches the required test name.</returns>
+    /// <exception cref="InvalidOperationException">The server reports a different database name.</exception>
     private static async Task VerifyIdentityAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("SELECT current_database()", connection);

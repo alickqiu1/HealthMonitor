@@ -53,6 +53,7 @@ internal sealed class DeviceCatalogProvisioner
     /// device conflicts with the fixed inventory, or the active
     /// fleet capacity of 1,000 registrations would be exceeded.
     /// </exception>
+    /// <exception cref="OperationCanceledException">A database operation observes cancellation; commit outcome may still be uncertain.</exception>
     /// <remarks>
     /// Fixed definitions are validated before database access. Inventory reads,
     /// conflict checks, capacity checks, and inserts share one transaction.
@@ -64,6 +65,8 @@ internal sealed class DeviceCatalogProvisioner
     /// Failure before commit rolls back the transaction on disposal. Cancellation
     /// or loss of the commit acknowledgement does not prove that commit failed;
     /// retrying provisioning rechecks committed state without replacing matching rows.
+    /// Matching rows are never updated, preserving their original creation timestamps.
+    /// Provider failures propagate; this method does not retry automatically or own the supplied pool.
     /// </remarks>
     public async Task<int> ProvisionAsync(
         CancellationToken cancellationToken = default)

@@ -25,11 +25,18 @@ internal static class IntegrationTestDatabaseConfiguration
     /// Gets the explicitly configured integration-test connection string.
     /// </summary>
     /// <returns>
-    /// A validated test database connection string.
+    /// A sensitive connection string passing the preliminary database-name check; never log it.
     /// </returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the test connection is missing or fails safety checks.
+    /// Thrown when the test connection is missing or fails the preliminary database-name check.
     /// </exception>
+    /// <exception cref="ArgumentException">Npgsql cannot parse the supplied connection string.</exception>
+    /// <remarks>
+    /// This loader reads environment configuration only, never runtime or maintenance secrets.
+    /// Its substring check is preliminary: PostgreSqlTestFixture must also enforce opt-in,
+    /// the exact database name, a loopback host, and the connected database name before use.
+    /// Parsing alone neither opens a connection nor establishes exclusive database ownership.
+    /// </remarks>
     public static string GetConnectionString()
     {
         var configuration = new ConfigurationBuilder()

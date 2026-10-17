@@ -7,6 +7,8 @@ namespace HealthMonitor.Application.Device;
 /// Operations do not write or determine ingestion eligibility. Use one scoped instance
 /// sequentially; its persistence context is not safe for concurrent operations.
 /// Provider failures propagate to the caller for handling at the application boundary.
+/// The active limit bounds in-memory fleet composition in the API. Overflow is an error
+/// because a partial catalog would misrepresent fleet totals and pagination.
 /// </remarks>
 public interface IDeviceCatalogQueries
 {

@@ -26,9 +26,10 @@ namespace HealthMonitor.Api;
 /// CI must never fall back to development credentials.
 /// In CI, the integration-test configuration is mandatory.
 ///
-/// The CI connection is validated before either DbContext
-/// is constructed. This prevents migrations from accidentally
-/// targeting the hosted development database.
+/// Test settings are restricted to the expected loopback endpoint, database,
+/// role name, and a nonblank password before either DbContext is constructed.
+/// These are configuration checks, not a connection or proof of server identity,
+/// effective role privileges, or TLS trust; CI verifies its connected database separately.
 ///
 /// Runtime API connections are configured separately and
 /// do not use these design-time factories.
@@ -66,6 +67,13 @@ internal static class DesignTimeDatabaseConfiguration
     /// <param name="readEnvironment">Reads a named environment setting.</param>
     /// <param name="readSecret">Loads only the Development maintenance secret when no override exists.</param>
     /// <returns>Validated maintenance or isolated-test configuration; never runtime credentials.</returns>
+    /// <exception cref="InvalidOperationException">Authorization, environment selection, or required connection settings are invalid.</exception>
+    /// <remarks>
+    /// Test authorization requires the exact value "true" and takes precedence over Development.
+    /// Otherwise DOTNET_ENVIRONMENT precedes ASPNETCORE_ENVIRONMENT; only Development may load
+    /// maintenance credentials. A present but invalid override fails rather than falling back.
+    /// Provider errors handled here are replaced with fixed diagnostics to avoid exposing input values.
+    /// </remarks>
     internal static string GetMigrationConnectionString(Func<string, string?> readEnvironment, Func<string?> readSecret)
     {
         bool isGitHubActions = string.Equals(
@@ -135,6 +143,7 @@ internal static class DesignTimeDatabaseConfiguration
     /// Validates and returns the dedicated PostgreSQL test
     /// connection supplied through an environment variable.
     /// </summary>
+    /// <param name="connectionString">Sensitive isolated-test setting; never included in diagnostics.</param>
     /// <returns>
     /// A connection string restricted to the expected local
     /// PostgreSQL test database.

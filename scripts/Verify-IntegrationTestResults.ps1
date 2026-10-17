@@ -4,7 +4,9 @@ Validates one CI integration group's actual TRX results against its reviewed inv
 .DESCRIPTION
 Uses TestMethod metadata for method identity; only the argument suffix is parsed for the
 single-parameter InlineData theories used here. This matches the pinned xUnit/VSTest
-adapter's observed TRX format. No database/configuration access or external modules.
+adapter's observed TRX format; recheck this contract when upgrading the adapter.
+It is not a general parser for arbitrary theory display names or test frameworks.
+No database/configuration access or external modules.
 A green test command alone is insufficient: zero discovery, skips, omitted methods,
 duplicated cases, and missing theory variants must all fail verification.
 .PARAMETER Path

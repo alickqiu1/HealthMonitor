@@ -140,8 +140,8 @@ jobs:
       # relying on tools that may happen to be preinstalled
       # on a particular GitHub-hosted runner image.
       #
-      # The client is used only for database identity
-      # verification; EF Core owns schema migrations.
+      # The client verifies database identity, required tables,
+      # and migration-history entries; EF Core owns schema migrations.
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update

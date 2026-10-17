@@ -30,7 +30,8 @@ internal sealed class DeviceProvisioningTestScenario
     /// <summary>The baseline belongs to others and must be unchanged after test-owned cleanup.</summary>
     internal Row[] Baseline { get; private set; } = Array.Empty<Row>();
 
-    /// <summary>Bounds provisioner calls and scenario database work, including lock waits.</summary>
+    /// <summary>Requests cooperative cancellation of scenario database work after 45 seconds.</summary>
+    /// <remarks>RunAsync supplies separate outer deadlines because provider cancellation alone cannot guarantee termination.</remarks>
     internal CancellationToken Token => _timeout.Token;
 
     /// <summary>Creates the unchanged production provisioner with a validated test data source.</summary>
@@ -51,12 +52,15 @@ internal sealed class DeviceProvisioningTestScenario
 
     /// <summary>Runs initialized scenarios, drains writers, and preserves setup/body/cleanup failures.</summary>
     /// <param name="action">Body with a 90-second outer deadline; concurrent writers must use StartProvisioningAsync.</param>
-    /// <returns>Completion after all writers terminate and owned records are cleaned up.</returns>
+    /// <returns>Completion after initialized work terminates and owned cleanup succeeds; otherwise setup, body, or teardown failures propagate.</returns>
+    /// <exception cref="ArgumentNullException">The scenario body is null.</exception>
     /// <remarks>
     /// An unresponsive operation terminates the test host instead of returning to teardown:
     /// a timeout exception alone would let cleanup race with an unresolved writer. The CI
     /// hang watchdog is a second boundary. Such failure requires discarding the disposable
     /// database; never automatically recover unknown leftovers in a shared local database.
+    /// Failed setup reserves no ownership: baseline capture and seed-absence checks must finish
+    /// before cleanup is allowed. Teardown failures are combined with the original failure.
     /// </remarks>
     internal static async Task RunAsync(Func<DeviceProvisioningTestScenario, Task> action)
     {
@@ -121,6 +125,10 @@ internal sealed class DeviceProvisioningTestScenario
     }
 
     /// <summary>Retains the primary failure when a later teardown operation also fails.</summary>
+    /// <param name="primary">Earlier failure, or null if teardown failed first.</param>
+    /// <param name="secondary">Later failure that must not replace the earlier diagnostic.</param>
+    /// <param name="message">Context for an aggregate containing both failures.</param>
+    /// <returns>The sole failure or an aggregate preserving both failures.</returns>
     private static Exception Combine(Exception? primary, Exception secondary, string message) =>
         primary is null ? secondary : new AggregateException(message, primary, secondary);
 
@@ -164,7 +172,12 @@ internal sealed class DeviceProvisioningTestScenario
 
     /// <summary>Reserves absent setup identities before an atomic insert, including uncertain commit outcomes.</summary>
     /// <param name="rows">Unique, previously absent test-owned rows; baseline records must never be supplied.</param>
-    /// <returns>Completion after the setup insert commits, within the scenario deadline.</returns>
+    /// <returns>Completion after the setup insert commits; cancellation or failure may leave the commit outcome uncertain.</returns>
+    /// <remarks>
+    /// Domain construction normalizes supplied metadata before insertion. Ownership uses proven-absent
+    /// IDs rather than commit acknowledgement, so cleanup remains conservative after a lost response.
+    /// This relies on exclusive database use; a different process must not insert those identities.
+    /// </remarks>
     internal async Task InsertAsync(params Row[] rows)
     {
         if (rows.Length == 0) return;
@@ -190,6 +203,12 @@ internal sealed class DeviceProvisioningTestScenario
     }
 
     /// <summary>Deletes only owned identities, then verifies all baseline data survived unchanged.</summary>
+    /// <returns>Completion after the bounded-ID deletion and full baseline comparison.</returns>
+    /// <remarks>
+    /// Called only after initialized work and registered writers reach terminal states. The fresh
+    /// token allows cleanup after body cancellation; its deadline still depends on provider cooperation.
+    /// Unknown leftovers are never adopted, and cleanup failure never authorizes a broader deletion.
+    /// </remarks>
     private async Task CleanupAsync()
     {
         // A canceled body must not suppress cleanup; never retry by broadening the deletion.

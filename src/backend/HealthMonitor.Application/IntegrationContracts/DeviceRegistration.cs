@@ -7,7 +7,12 @@ namespace HealthMonitor.Application.IntegrationContracts;
 /// <param name="SiteCode">Canonical site code.</param>
 /// <param name="DeviceType">Inventory device category.</param>
 /// <param name="IsRetired">Whether the device has been soft-retired.</param>
-/// <remarks>Contains no measurements, computed health, or persistence objects.</remarks>
+/// <remarks>
+/// A value snapshot avoids exposing tracked Device entities or persistence dependencies to
+/// other modules. Contains no measurements or computed health, and does not validate eligibility.
+/// Immutability preserves the returned facts; it does not make later catalog reads consistent
+/// with this snapshot or enforce domain validation on independently constructed projections.
+/// </remarks>
 public sealed record DeviceRegistration(
     Guid DeviceId,
     string DisplayName,

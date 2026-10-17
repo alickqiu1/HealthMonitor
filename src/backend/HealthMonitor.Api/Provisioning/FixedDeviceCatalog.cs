@@ -100,8 +100,8 @@ internal static class FixedDeviceCatalog
     /// <param name="siteCode">Fictional site identifier.</param>
     /// <returns>A fixed device definition.</returns>
     /// <remarks>
-    /// The sequence number is embedded in the UUID's final 12 hexadecimal
-    /// digits. This produces stable identifiers across provisioning runs.
+    /// The zero-padded decimal sequence is embedded in the UUID's final 12
+    /// digits. These digits are valid UUID characters and stay stable across provisioning runs.
     ///
     /// The identifiers are intentionally deterministic, not random.
     /// They must not be used as authentication or authorization secrets.

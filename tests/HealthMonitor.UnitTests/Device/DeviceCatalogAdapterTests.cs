@@ -7,6 +7,7 @@ namespace HealthMonitor.UnitTests.Device;
 /// <summary>Verifies the module bridge forwards inputs/results and does not reinterpret failures or retirement.</summary>
 public sealed class DeviceCatalogAdapterTests
 {
+    /// <summary>Captures explicit lookup forwarding and rejects fleet-list requests outside Telemetry's port.</summary>
     private sealed class StubQueries : IDeviceCatalogQueries
     {
         public Func<IReadOnlyCollection<Guid>, CancellationToken, Task<IReadOnlyList<DeviceRegistration>>> Lookup { get; init; }

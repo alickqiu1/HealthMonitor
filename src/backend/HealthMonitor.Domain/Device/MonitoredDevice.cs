@@ -12,7 +12,9 @@ namespace HealthMonitor.Domain.Device;
 ///
 /// Device identity is immutable after creation. Asset tags and site
 /// codes are normalized to uppercase. Display names preserve case after trimming.
-/// Device types must match the approved case-sensitive vocabulary after trimming.
+/// Public construction requires Server, Database, Gateway, or SCADA after trimming,
+/// with case-sensitive matching. EF materialization and direct SQL bypass this constructor
+/// validation; the current database mapping does not enforce category membership.
 ///
 /// Retirement is a soft operation that preserves the device record
 /// for historical telemetry and incident references.

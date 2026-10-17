@@ -33,7 +33,7 @@ if (args.Length == 1 &&
     }
 
     // Privileged credentials are used only by this explicit command.
-    // Normal API requests use the restricted runtime account.
+    // Normal API configuration must supply a separately provisioned restricted runtime account.
     string? provisioningConnectionString =
         builder.Configuration.GetConnectionString("HealthMonitor");
 
@@ -65,7 +65,7 @@ if (args.Length == 1 &&
 // 2. Shared PostgreSQL runtime data source
 // ------------------------------------------------------------
 
-// Normal HTTP execution uses a restricted PostgreSQL account.
+// Normal HTTP execution requires a restricted PostgreSQL account; actual grants are an operational prerequisite.
 // The connection string is supplied through configuration, such as
 // .NET User Secrets during development or hosting secrets in production.
 //

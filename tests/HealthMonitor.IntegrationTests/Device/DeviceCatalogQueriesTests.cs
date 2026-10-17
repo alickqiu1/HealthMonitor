@@ -20,9 +20,15 @@ namespace HealthMonitor.IntegrationTests.Device;
 [Collection(DeviceDatabaseCollection.Name)]
 public sealed class DeviceCatalogQueriesTests
 {
+    /// <summary>Uses the fixture-verified connection without transferring its ownership to EF.</summary>
+    /// <param name="connection">Open connection owned and disposed by the test.</param>
+    /// <returns>A caller-owned context; each writing scenario supplies its rollback-only transaction.</returns>
     private static DeviceDbContext CreateContext(NpgsqlConnection connection) =>
         new(new DbContextOptionsBuilder<DeviceDbContext>().UseNpgsql(connection).Options);
 
+    /// <summary>Creates an unpersisted canonical registration with unique identity and tag.</summary>
+    /// <param name="retired">Whether to apply a deterministic retirement timestamp.</param>
+    /// <returns>A domain entity to insert only inside the test-owned transaction.</returns>
     private static MonitoredDevice CreateDevice(bool retired = false)
     {
         var device = new MonitoredDevice(Guid.NewGuid(), $"QUERY-{Guid.NewGuid():N}",
@@ -32,6 +38,9 @@ public sealed class DeviceCatalogQueriesTests
         return device;
     }
 
+    /// <summary>Builds the expected application projection independently of the production SQL projection.</summary>
+    /// <param name="device">Known baseline or test-owned entity, including its retirement state.</param>
+    /// <returns>The six inventory values expected from a catalog query.</returns>
     private static DeviceRegistration Registration(MonitoredDevice device) =>
         new(device.Id, device.DisplayName, device.AssetTag, device.SiteCode,
             device.DeviceType, device.RetiredAtUtc.HasValue);

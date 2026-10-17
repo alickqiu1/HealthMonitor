@@ -8,6 +8,9 @@ namespace HealthMonitor.Infrastructure.Data.DeviceContext;
 /// <remarks>
 /// Uses no-tracking SQL projections of only registration fields. It owns no connection,
 /// transaction, or pool and never saves changes. The caller owns the context's lifetime.
+/// No-tracking reads express the read-only contract and keep inventory composition independent
+/// of tracked entity state. Scalar projections do not materialize entities in the first place.
+/// Snapshot consistency follows the caller's transaction; separate module reads do not establish a shared atomic snapshot.
 /// </remarks>
 public sealed class DeviceCatalogQueries : IDeviceCatalogQueries
 {

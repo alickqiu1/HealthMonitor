@@ -136,6 +136,13 @@ public sealed class DeviceCatalogProvisionerTests
         }
     });
 
+    /// <summary>Verifies two overlapping provisioner sessions serialize to one insertion and one no-op.</summary>
+    /// <returns>Completion after both writers terminate and the committed catalog is checked.</returns>
+    /// <remarks>
+    /// PostgreSQL lock observation proves overlap, rather than relying on task scheduling.
+    /// RunAsync enforces the outer deadline and drains registered writers before owned cleanup;
+    /// unresponsive work terminates the test host instead of allowing teardown to race with it.
+    /// </remarks>
     [Fact]
     public Task ConcurrentProvisioning_InsertsOnce() => RunAsync(async scenario =>
     {
