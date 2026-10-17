@@ -1,9 +1,6 @@
 
 using HealthMonitor.Api.Composition;
 using HealthMonitor.Api.Provisioning;
-using HealthMonitor.Infrastructure.Data.DeviceContext;
-using HealthMonitor.Infrastructure.Data.TelemetryContext;
-using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -74,79 +71,11 @@ if (args.Length == 1 &&
 //
 // EF Core migrations use separate design-time DbContext factories
 // with privileged credentials; migration access is not registered here.
-string? connectionString =
-    builder.Configuration.GetConnectionString("HealthMonitorRuntime");
-
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    throw new InvalidOperationException(
-        "ConnectionStrings:HealthMonitorRuntime must be configured.");
-}
-
-// Both bounded contexts use the same DI-owned connection pool.
-// Sharing the pool does not transfer table or migration ownership
-// between the Device and Telemetry modules.
-builder.Services.AddSingleton<NpgsqlDataSource>(_ =>
-{
-    var dataSourceBuilder =
-        new NpgsqlDataSourceBuilder(connectionString);
-
-    return dataSourceBuilder.Build();
-});
+DatabaseConfiguration.AddRuntimeDatabase(
+    builder.Services, builder.Configuration, builder.Environment.EnvironmentName);
 
 // ------------------------------------------------------------
-// 3. Device bounded context
-// ------------------------------------------------------------
-
-// DeviceDbContext owns the device schema and its independent
-// EF Core migration history.
-builder.Services.AddDbContext<DeviceDbContext>(
-    (services, options) =>
-    {
-        var dataSource =
-            services.GetRequiredService<NpgsqlDataSource>();
-
-        options.UseNpgsql(
-            dataSource,
-            pg =>
-            {
-                pg.MigrationsAssembly(
-                    "HealthMonitor.Infrastructure");
-
-                pg.MigrationsHistoryTable(
-                    "__ef_migrations_history",
-                    "device");
-            });
-    });
-
-// ------------------------------------------------------------
-// 4. Telemetry bounded context
-// ------------------------------------------------------------
-
-// TelemetryDbContext owns the telemetry schema and its independent
-// EF Core migration history. It uses the same runtime data source
-// but does not depend on DeviceDbContext.
-builder.Services.AddDbContext<TelemetryDbContext>(
-    (services, options) =>
-    {
-        var dataSource =
-            services.GetRequiredService<NpgsqlDataSource>();
-
-        options.UseNpgsql(
-            dataSource,
-            pg =>
-            {
-                pg.MigrationsAssembly(
-                    "HealthMonitor.Infrastructure");
-
-                pg.MigrationsHistoryTable(
-                    "__ef_migrations_history",
-                    "telemetry");
-            });
-    });
-
-// ------------------------------------------------------------
-// 5. API services
+// 3. API services
 // ------------------------------------------------------------
 
 builder.Services.AddDeviceCatalog();
@@ -159,7 +88,7 @@ builder.Services.AddOpenApi();
 var app = builder.Build();
 
 // ------------------------------------------------------------
-// 6. HTTP middleware and endpoints
+// 4. HTTP middleware and endpoints
 // ------------------------------------------------------------
 
 // OpenAPI documents are exposed only in Development.

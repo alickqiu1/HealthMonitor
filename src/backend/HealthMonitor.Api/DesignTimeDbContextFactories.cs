@@ -1,11 +1,11 @@
 
 using System;
+using HealthMonitor.Api.Composition;
 using HealthMonitor.Infrastructure.Data.DeviceContext;
 using HealthMonitor.Infrastructure.Data.TelemetryContext;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
-using Npgsql;
 
 namespace HealthMonitor.Api;
 
@@ -16,8 +16,8 @@ namespace HealthMonitor.Api;
 /// <remarks>
 /// Two explicitly separated configuration paths are supported:
 ///
-/// 1. Normal local development uses the API project's
-///    ConnectionStrings:HealthMonitor User Secret.
+/// 1. Explicit Development mode uses ConnectionStrings__HealthMonitor
+///    before the API project's ConnectionStrings:HealthMonitor User Secret.
 ///
 /// 2. Authorized database integration testing uses the
 ///    ConnectionStrings__HealthMonitorIntegrationTest
@@ -55,20 +55,26 @@ internal static class DesignTimeDatabaseConfiguration
     /// Explicit test authorization selects the isolated test
     /// database. GitHub Actions requires this authorization.
     ///
-    /// Normal local development continues using User Secrets.
+    /// Explicit Development uses a maintenance environment override before User Secrets.
     /// A failed CI configuration must not fall back to those
     /// secrets or any runtime database connection.
     /// </remarks>
-    public static string GetMigrationConnectionString()
+    public static string GetMigrationConnectionString() =>
+        GetMigrationConnectionString(Environment.GetEnvironmentVariable, LoadDevelopmentSecret);
+
+    /// <summary>Resolves maintenance settings with controlled inputs, keeping secret loading lazy and testable.</summary>
+    /// <param name="readEnvironment">Reads a named environment setting.</param>
+    /// <param name="readSecret">Loads only the Development maintenance secret when no override exists.</param>
+    /// <returns>Validated maintenance or isolated-test configuration; never runtime credentials.</returns>
+    internal static string GetMigrationConnectionString(Func<string, string?> readEnvironment, Func<string?> readSecret)
     {
         bool isGitHubActions = string.Equals(
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS"),
+            readEnvironment("GITHUB_ACTIONS"),
             "true",
             StringComparison.OrdinalIgnoreCase);
 
         bool testAuthorized = string.Equals(
-            Environment.GetEnvironmentVariable(
-                TestAuthorizationVariable),
+            readEnvironment(TestAuthorizationVariable),
             "true",
             StringComparison.Ordinal);
 
@@ -88,28 +94,41 @@ internal static class DesignTimeDatabaseConfiguration
             //
             // An invalid test configuration must be rejected;
             // never fall back to the development database.
-            return GetValidatedTestConnectionString();
+            return GetValidatedTestConnectionString(readEnvironment(TestConnectionVariable));
         }
 
-        // Preserve the existing local development behavior.
-        // The privileged connection remains in User Secrets,
-        // outside source control.
-        var configuration = new ConfigurationBuilder()
-            .AddUserSecrets<DeviceDbContextFactory>(
-                optional: false)
-            .Build();
+        // WebApplication (.NET 10) gives DOTNET_ENVIRONMENT precedence over ASPNETCORE_ENVIRONMENT.
+        // An empty/unknown higher-priority value is not permission to use Development credentials.
+        string? environment = readEnvironment("DOTNET_ENVIRONMENT")
+            ?? readEnvironment("ASPNETCORE_ENVIRONMENT");
+        if (!string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Local EF Core migrations require explicit Development mode.");
 
-        string? connectionString =
-            configuration.GetConnectionString("HealthMonitor");
-
-        if (string.IsNullOrWhiteSpace(connectionString))
+        // Presence matters: an empty or invalid override must not silently select a different credential source.
+        string? connectionString = readEnvironment("ConnectionStrings__HealthMonitor");
+        if (connectionString is null)
         {
-            throw new InvalidOperationException(
-                "ConnectionStrings:HealthMonitor must be " +
-                "configured for local EF Core migrations.");
+            try
+            {
+                connectionString = readSecret();
+            }
+            catch (Exception exception) when (exception is IOException or FormatException or InvalidOperationException)
+            {
+                // Configuration providers may quote malformed secret contents in diagnostics.
+                throw new InvalidOperationException("The API Development maintenance User Secret could not be loaded; check its configuration.");
+            }
         }
 
-        return connectionString;
+        return DatabaseConfiguration.ParseConnectionString(
+            connectionString, "ConnectionStrings:HealthMonitor").ConnectionString;
+    }
+
+    /// <summary>Loads only the API maintenance secret, after explicit Development selection.</summary>
+    private static string? LoadDevelopmentSecret()
+    {
+        using var configuration = new ConfigurationManager();
+        configuration.AddUserSecrets<DeviceDbContextFactory>(optional: false);
+        return configuration.GetConnectionString("HealthMonitor");
     }
 
     /// <summary>
@@ -135,36 +154,9 @@ internal static class DesignTimeDatabaseConfiguration
     /// This defense prevents accidental schema migration
     /// against a non-test PostgreSQL server.
     /// </remarks>
-    private static string GetValidatedTestConnectionString()
+    private static string GetValidatedTestConnectionString(string? connectionString)
     {
-        string? connectionString =
-            Environment.GetEnvironmentVariable(
-                TestConnectionVariable);
-
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException(
-                $"{TestConnectionVariable} must be configured " +
-                "for authorized database integration testing.");
-        }
-
-        NpgsqlConnectionStringBuilder builder;
-
-        try
-        {
-            builder = new NpgsqlConnectionStringBuilder(
-                connectionString);
-        }
-        catch (ArgumentException exception)
-        {
-            // Do not include connection-string contents in
-            // exception messages because they may contain
-            // credentials.
-            throw new InvalidOperationException(
-                "The integration-test database connection " +
-                "string is invalid.",
-                exception);
-        }
+        var builder = DatabaseConfiguration.ParseConnectionString(connectionString, TestConnectionVariable);
 
         bool validTarget =
             string.Equals(
@@ -195,7 +187,7 @@ internal static class DesignTimeDatabaseConfiguration
                 "127.0.0.1:5432/healthmonitor_test.");
         }
 
-        return connectionString;
+        return builder.ConnectionString;
     }
 }
 
@@ -215,6 +207,15 @@ internal static class DesignTimeDatabaseConfiguration
 public sealed class DeviceDbContextFactory
     : IDesignTimeDbContextFactory<DeviceDbContext>
 {
+    private readonly Func<string> _resolveConnectionString;
+
+    /// <summary>Creates the factory with the approved environment-aware maintenance selection.</summary>
+    public DeviceDbContextFactory() : this(DesignTimeDatabaseConfiguration.GetMigrationConnectionString) { }
+
+    /// <summary>Provides controlled configuration selection for database-free factory verification.</summary>
+    /// <param name="resolveConnectionString">Resolves approved maintenance settings without changing context ownership.</param>
+    internal DeviceDbContextFactory(Func<string> resolveConnectionString) => _resolveConnectionString = resolveConnectionString;
+
     /// <summary>
     /// Creates a configured Device DbContext for EF Core tooling.
     /// </summary>
@@ -231,8 +232,7 @@ public sealed class DeviceDbContextFactory
     public DeviceDbContext CreateDbContext(string[] args)
     {
         string connectionString =
-            DesignTimeDatabaseConfiguration
-                .GetMigrationConnectionString();
+            _resolveConnectionString();
 
         var options = new DbContextOptionsBuilder<DeviceDbContext>();
 
@@ -271,6 +271,15 @@ public sealed class DeviceDbContextFactory
 public sealed class TelemetryDbContextFactory
     : IDesignTimeDbContextFactory<TelemetryDbContext>
 {
+    private readonly Func<string> _resolveConnectionString;
+
+    /// <summary>Creates the factory with the approved environment-aware maintenance selection.</summary>
+    public TelemetryDbContextFactory() : this(DesignTimeDatabaseConfiguration.GetMigrationConnectionString) { }
+
+    /// <summary>Provides controlled configuration selection for database-free factory verification.</summary>
+    /// <param name="resolveConnectionString">Resolves approved maintenance settings without changing context ownership.</param>
+    internal TelemetryDbContextFactory(Func<string> resolveConnectionString) => _resolveConnectionString = resolveConnectionString;
+
     /// <summary>
     /// Creates a configured Telemetry DbContext for EF Core tooling.
     /// </summary>
@@ -287,8 +296,7 @@ public sealed class TelemetryDbContextFactory
     public TelemetryDbContext CreateDbContext(string[] args)
     {
         string connectionString =
-            DesignTimeDatabaseConfiguration
-                .GetMigrationConnectionString();
+            _resolveConnectionString();
 
         var options =
             new DbContextOptionsBuilder<TelemetryDbContext>();

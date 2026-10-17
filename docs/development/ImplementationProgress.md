@@ -2,12 +2,12 @@
 
 ## Authority and current position
 
-- Authority: [Technical Architecture Plan, Edition 1.5](../architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md). The owner approved this implementation roadmap in the originating chat; no architecture amendment is approved.
+- Authority: [Technical Architecture Plan, Edition 1.5](../architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md). The owner approved this implementation roadmap in the originating chat; the owner approved the Step 2.A configuration amendment (minimal hybrid reconciliation), now recorded in Edition 1.5. Other architecture decisions remain unchanged.
 - Steps 3.1-3.4 preserve historical conversation labels. Other substep labels are the approved implementation roadmap, not numbering defined by Edition 1.5.
-- Current position: Steps 2.B and 2.C are implemented, integration-tested, CI-verified, and completed within approved scope. Step 2 closure remains open: 2.A configuration architecture reconciliation and 2.D foundation closure review are pending. Step 3.4 remains unimplemented.
-- Next development task: **2.A, Configuration Architecture Decision**, followed by **2.D, foundation closure review**.
-- Current authorization: update this document and stop. This checkpoint does not authorize Step 2.A or Step 2.D implementation.
-- Evidence basis: the original repository assessment was static. Subsequent local results are Work-reported implementation-handoff evidence; run #4 results were visually verified by the owner and an independent reviewer from GitHub Actions screenshots. No builds/tests, migrations, database access, CI-run inspection, or TRX-content inspection were performed for this document update.
+- Current position: Step 2.A is implemented and locally unit-tested, pending independent implementation review and fresh CI verification. Steps 2.B and 2.C retain their completed, integration-tested, CI-verified approved scope. Step 2 closure remains open pending the 2.D foundation review and remaining evidence. Step 3.4 remains unimplemented.
+- Next development task: **2.D, foundation closure review**, after review of the Step 2.A implementation and its outstanding CI evidence.
+- Current authorization: implement and locally verify only approved Step 2.A, provide the independent-review handoff, and stop. Step 2.D and Step 3.4 are not authorized.
+- Evidence basis: the original repository assessment was static. Run #4 results were visually verified by the owner and an independent reviewer from GitHub Actions screenshots. Earlier local results remain attributed to their handoff. Step 2.A local execution is recorded separately below; no database connections, migrations, CI-run inspection, or TRX-artifact inspection occurred during this implementation.
 
 ## Status and working rules
 
@@ -41,7 +41,7 @@ Milestones are **Planned** unless another implementation status is identified be
 
 | Label | Scope / deliverable | Prerequisites | Required verification / known position |
 | --- | --- | --- | --- |
-| 2.A | Compare configuration designs and precedence; recommend plan alignment or an explicit amendment. Preserve CI isolation and runtime/migration privilege separation. Obtain approval before connection-behavior changes; keep separate from 2.B. | Architecture comparison | Configuration selection, missing/mismatched settings, precedence, rejected test targets. Decision pending. |
+| 2.A | Compare configuration designs and precedence; recommend plan alignment or an explicit amendment. Preserve CI isolation and runtime/migration privilege separation. Obtain approval before connection-behavior changes; keep separate from 2.B. | Architecture comparison | Option C and its refinements approved and implemented: canonical runtime validation, Development maintenance override before User Secrets, and preserved isolated test selection. Locally unit-tested; independent implementation review and fresh CI verification pending. No database execution. |
 | 2.B | Immutable shared device registration projection; separate Device application query boundary and Telemetry lookup port; API-owned forwarding adapter; scoped DI. Explicit lookups preserve retired registrations; fleet capacity queries count active registrations. No unused interfaces or generic repositories. | Existing Device model/context | Completed within approved scope: implemented, locally unit-tested, integration-tested, and CI-verified; independent source-level review approved. All five PostgreSQL catalog cases passed in run #4, with no failures or skips. This does not verify the atomic ingestion coordinator. |
 | 2.C | Existing isolated PostgreSQL fixture extended for validated data-source creation, Device isolation and ownership-aware cleanup. Catalog query tests enabled; comprehensive provisioning tests added. CI applies both Device and Telemetry migrations to verified disposable healthmonitor_test, with separate migration-history and required-schema checks. | Verified isolated database; configuration resolution where relevant | Completed within approved scope: implemented, integration-tested, and CI-verified. First-run insertion, repeat execution, conflicts, state preservation, capacity, cleanup, and provisioning concurrency covered; 13 provisioning cases passed. Three sequential groups passed all 27 cases in run #4. TRX checks require tests and theory variants and reject missing or skipped cases. Mid-insert failure injection remains deferred; see limitations below. |
 | 2.D | Focused models/mappings/migrations, catalog, provisioning, shared-pool, configuration/privilege and documentation review. Explicitly resolve missing write repository named in plan without speculative abstractions or silent amendment. | Resolved 2.A; completed 2.B-2.C | Pending: both reviews, focused test evidence, reproducible isolated setup, explicit gap disposition before Step 2 closure. |
@@ -91,12 +91,12 @@ Step 1 environment/tooling/hosting claims also need evidence; source alone canno
 
 | Item | Impact / resolution | Milestone |
 | --- | --- | --- |
-| Connection configuration differs | Plan uses Device/Telemetry keys and migration environment overrides; runtime uses HealthMonitorRuntime and local factories use HealthMonitor User Secrets. Compare before changing; preserve isolated test branch. No amendment approved. | 2.A |
+| Configuration reconciliation implemented | Approved amendment retains HealthMonitorRuntime, separate HealthMonitor maintenance credentials, and isolated HealthMonitorIntegrationTest selection. Explicit Development override precedes maintenance User Secrets; runtime settings are validated before host construction. Independent implementation review and new CI evidence remain pending. | 2.A |
 | Mid-insert failure injection deferred | Pre-insert conflict/capacity tests do not prove rollback after partial insertion. Deterministic mid-insert failure injection remains deferred. | 2.C limitation |
 | Capacity policy distinction unresolved | Provisioning counts all stored Device rows; active catalog queries count active rows. No architecture amendment has reconciled this distinction. | 2.A / 2.D |
 | Test serialization scope | Device integration-test serialization coordinates one test process. Independent concurrent processes against the same database are unsupported by this fixture design. | 2.C limitation |
 | Write repository named in plan absent | Explicit justification/architecture resolution needed; not an ingestion prerequisite. | 2.D |
-| Foundation closure pending | Steps 2.B and 2.C are complete within scope; unresolved 2.A decisions and the 2.D review still prevent overall Step 2 closure. | 2.A / 2.D |
+| Foundation closure pending | Steps 2.B and 2.C are complete within scope; Step 2.A implementation review/CI evidence and the 2.D review still prevent overall Step 2 closure. Actual role grants, TLS trust, and hosted behavior remain unverified. | 2.A / 2.D |
 | Hosted state unknown | No hosted Supabase verification is claimed; operational verification requires separate authorization. | 10 |
 
 ## Verification record
@@ -106,12 +106,15 @@ Step 1 environment/tooling/hosting claims also need evidence; source alone canno
 | Historical nine PostgreSQL receipt repository tests | Owner reports GitHub Actions passed | Run URL/revision and independent verification not recorded. |
 | Original repository assessment | Source/workflow inspected | Historical static evidence only; no build/test/database execution. |
 | Step 2.B independent source-level review | Approved as implemented and locally unit-tested | Subsequent PostgreSQL integration and CI verification recorded below; coordinator verification remains outside scope. |
-| Full local unit suite | 339 passed, 0 failed, 0 skipped | Work-reported implementation-handoff result; not rerun for this documentation update. |
+| Historical full local unit suite (2.B / 2.C handoff) | 339 passed, 0 failed, 0 skipped | Earlier Work-reported implementation-handoff result; preserved separately from Step 2.A execution below. |
 | Database-free TRX verifier self-tests | 18 passed | Work-reported implementation-handoff result; not rerun here. |
-| Integration-test project build | Passed; zero errors and warnings | Work-reported implementation-handoff result; not rebuilt here. |
+| Historical integration-test project build (2.C handoff) | Passed; zero errors and warnings | Earlier Work-reported result; the separate Step 2.A build below was executed in this session. |
 | Steps 2.B / 2.C CI verification | healthmonitor-ci.yml run #4, commit afc451c: Success; approximately 1 minute 42 seconds | Owner and independent reviewer visually verified GitHub Actions screenshots. Not locally reproduced database executions or inspected TRX contents; no run URL supplied. |
 | Run #4 migration and verification steps | Both Device and Telemetry schema migrations and validation succeeded; separate migration-history and required-schema checks included. Receipt, catalog, and provisioning TRX verification steps succeeded. | Same screenshot-confirmed CI evidence; applies to the explicitly validated disposable healthmonitor_test database, not hosted Supabase. |
-| This tracking-document change | Documentation only | No application implementation, tests, migrations or database access. Final document review reported in the accompanying change report. |
+| Prior tracking-document update | Documentation only | Historical update; no application implementation, tests, migrations or database access occurred for that update. |
+| Step 2.A full local unit suite, 2026-10-16 | 421 passed, 0 failed, 0 skipped (339 baseline + 82 new configuration cases) | Executed by Work against the working-tree changes based on c3d6a68; controlled fake inputs, no real User Secrets or database connections. |
+| Step 2.A integration-test project and backend dependency build, 2026-10-16 | Passed; zero warnings and errors | Release build with --no-restore; integration tests were not executed. |
+| Step 2.A CI / PostgreSQL verification | Pending; no database tests run locally | Run #4 remains the earlier 27-case baseline and does not verify these uncommitted changes. |
 
 GitHub Actions run #4 PostgreSQL results (owner and independent reviewer screenshot-confirmed):
 

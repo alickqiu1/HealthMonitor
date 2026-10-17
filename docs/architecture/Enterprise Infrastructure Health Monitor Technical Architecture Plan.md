@@ -7,6 +7,9 @@ Build a polished, demonstrable dashboard through eleven implementation steps, ad
 The intended implementer is an experienced C# and industrial telemetry developer. The project should show modern React and TypeScript capability without expanding the MVP into a full enterprise platform. This plan specifies architectural boundaries, conceptual models, public contracts, bootstrap commands, verification gates, and publication readiness. It deliberately leaves controllers, repository implementations, and React components to implementation.
 
 ### Edition 1 5 amendments and implementation status
+
+**Approved Step 2.A configuration amendment.** The owner approved minimal hybrid reconciliation: one canonical runtime setting, separate Development maintenance credentials, and the existing isolated CI selection. This supersedes the former Device/Telemetry connection-key examples in sections 6 and 10. D03's shared source, scoped contexts, module boundaries, one physical database, private schemas, separate histories, runtime privilege restrictions, and reviewed hosted SQL releases remain authoritative. Historical startup evidence below describes the earlier revision.
+
 Option A AI-generated structured queries is approved for the MVP and included in the eleven-step implementation roadmap. A user describes the desired device view in plain English; the model proposes a typed filter and sort object. The server validates it and the user applies it through the existing device-grid GET endpoint. EF Core and module query adapters remain responsible for database access. No free-form model SQL, new schema, third domain module, fifth production project, agent framework, or autonomous tool execution is introduced.
 
 This edition preserves sections 1–24, original models, bootstrap commands, persistence decisions, security controls, reference register, and the approved D11 AI feature introduced in edition 1.4. Edition 1.5 replaces the time-bound roadmap with eleven implementation steps and completion gates. Fixed day counts and working-hour budgets no longer govern delivery; scope and verification requirements remain. The original dependency baselines and their 12 October verification record are retained rather than represented as newly executed checks.
@@ -285,7 +288,7 @@ ShouldRunNpmInstall=false avoids an implicit npm install overwriting the explici
 
 # 6 Secrets local startup and bootstrap checks
 ### Configuration contract
-Commit nonsecret defaults only: Cors:AllowedOrigins=["http://localhost:5173"], Simulation:HttpEndpointEnabled=false, Simulation:AllowLocalAnonymous=false, DemoProducer:Enabled=false, DemoProducer:IntervalSeconds=60, Monitoring:OfflineAfterSeconds=90, Monitoring:LatencyWarningMs=250, Monitoring:CpuWarningPercent=80. Omit real connection strings. Device and Telemetry configuration keys point to the same runtime role; startup validates their equality before creating the shared data source.
+Commit nonsecret defaults only: Cors:AllowedOrigins=["http://localhost:5173"], Simulation:HttpEndpointEnabled=false, Simulation:AllowLocalAnonymous=false, DemoProducer:Enabled=false, DemoProducer:IntervalSeconds=60, Monitoring:OfflineAfterSeconds=90, Monitoring:LatencyWarningMs=250, Monitoring:CpuWarningPercent=80. Omit real connection strings. ConnectionStrings:HealthMonitorRuntime is the sole runtime database setting. Both contexts receive the same DI-owned data source; separate logical keys are unnecessary for the required single runtime role. Legacy Device/Telemetry keys are unused and never fallbacks; leftover legacy entries do not invalidate an otherwise valid canonical setting.
 
 ### Store the runtime credential outside Git
 Copy the host, username, database, and port from Supabase's Connect dialog. Download the project's CA certificate to a local path outside Git. Use a restricted runtime role, not the postgres owner role. The connection format is Npgsql key/value syntax, not a PostgreSQL URI. [R11–R14]
@@ -293,8 +296,8 @@ Copy the host, username, database, and port from Supabase's Connect dialog. Down
 $api = 'src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj'
 dotnet user-secrets init --project $api
 $db = Read-Host 'Paste runtime Npgsql connection string'
-dotnet user-secrets set 'ConnectionStrings:Device' $db --project $api
-dotnet user-secrets set 'ConnectionStrings:Telemetry' $db --project $api
+dotnet user-secrets set 'ConnectionStrings:HealthMonitorRuntime' $db --project $api
+# Do not duplicate runtime credentials under legacy Device/Telemetry keys.
 Remove-Variable db
 dotnet user-secrets set 'Simulation:HttpEndpointEnabled' 'true' --project $api
 dotnet user-secrets set 'Simulation:AllowLocalAnonymous' 'true' --project $api
@@ -309,12 +312,12 @@ SSL Mode=VerifyFull;Root Certificate=<absolute-CA-path>;
 Maximum Pool Size=10;Timeout=15;Command Timeout=15
 ```
 
-Create one singleton NpgsqlDataSource in the API composition root and pass that same instance to both scoped DbContexts. Set Maximum Pool Size=10 on that source; identical strings alone are not the ownership rule. Budget ten connections per API process plus migration/admin connections. Different roles or replicas create additional pool budgets. Deployment keys are ConnectionStrings__Device and ConnectionStrings__Telemetry. [R25]
+Create one singleton NpgsqlDataSource in the API composition root and pass that same instance to both scoped DbContexts. Set Maximum Pool Size=10 on that source; identical strings alone are not the ownership rule. Budget ten connections per API process plus migration/admin connections. Different roles or replicas create additional pool budgets. The deployment key is ConnectionStrings__HealthMonitorRuntime. Validate syntax and explicit Host/Database/Username before host construction without opening a connection. Normalize omitted Maximum Pool Size to 10; reject any explicitly different maximum or a minimum above that budget. Reject transaction-pooler port 6543; outside Development require SSL Mode=VerifyFull. Parsing cannot prove certificate trust, target identity, or effective grants; verify those operationally before release. Never fall back to maintenance or integration credentials, and never expose raw connection strings or provider diagnostics. [R25]
 
 ### Two terminal startup and verification
 ```powershell
 # Terminal A, repository root; after application implementation
-$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:DOTNET_ENVIRONMENT = 'Development'
 dotnet run --project src/backend/HealthMonitor.Api --no-launch-profile `
   -- --urls 'https://localhost:7043;http://localhost:5043'
 # Terminal B, repository root
@@ -448,9 +451,9 @@ Catalog and telemetry queries are composed through ports. There are no cross-sch
 
 # 10 Migrations and consistency
 ### Migration workflow
-Implement and register both DbContexts in the API before these commands. Both contexts reside in HealthMonitor.Infrastructure, with separate mappings, migration folders, and model snapshots under Device/Persistence and Telemetry/Persistence. Explicit context selection and separate history tables keep their migration streams independent even though they share an assembly. The startup project loads API user-secrets in Development; do not build a separate design-time factory that ignores the intended configuration source.
+Implement and register both DbContexts in the API before these commands. Both contexts reside in HealthMonitor.Infrastructure, with separate mappings, migration folders, and model snapshots under Device/Persistence and Telemetry/Persistence. Explicit context selection and separate history tables keep their migration streams independent even though they share an assembly. Both design-time factories use the same explicit maintenance-selection policy, independently of runtime registration. Authorized integration mode has highest priority and selects only ConnectionStrings__HealthMonitorIntegrationTest with the existing strict target checks; GitHub Actions without exact test authorization fails. Outside authorized test mode, require explicit Development. Match WebApplication environment-variable precedence: DOTNET_ENVIRONMENT before ASPNETCORE_ENVIRONMENT; absence defaults to Production, and a blank/unknown higher-priority value does not authorize Development fallback. Factory arguments do not override this policy. See [ASP.NET Core environments](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/environments?view=aspnetcore-10.0).
 ```powershell
-$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:DOTNET_ENVIRONMENT = 'Development'
 $api = 'src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj'
 $infrastructure = 'src/backend/HealthMonitor.Infrastructure/HealthMonitor.Infrastructure.csproj'
 dotnet ef migrations add InitialDevice --context DeviceDbContext `
@@ -461,18 +464,29 @@ dotnet ef migrations add InitialTelemetry --context TelemetryDbContext `
   --output-dir Telemetry/Persistence/Migrations
 ```
 
-Set the migration connection strings temporarily through environment variables, using the DDL-capable migration role; they override runtime user-secrets. Apply Device migrations before Telemetry. Review generated SQL and create schemas, roles, and default grants deliberately. Migration tooling is not a runtime API operation. [R06, R16]
+Set ConnectionStrings__HealthMonitor temporarily using the DDL-capable maintenance role. In explicit Development this environment value overrides the API ConnectionStrings:HealthMonitor User Secret; an explicitly blank, malformed, or incomplete override fails without fallback. Only absence permits the maintenance User Secret. Non-Development selection must not load User Secrets, and runtime credentials are never a substitute. The private Development-only provisioning command uses the same maintenance key through normal application configuration; it remains separate from HTTP startup. Apply Device migrations before Telemetry. Review generated SQL and create schemas, roles, and default grants deliberately. Migration tooling is not a runtime API operation. [R06, R16]
 ```powershell
-$migrationDb = Read-Host 'Paste migration role Npgsql connection string'
-$env:ConnectionStrings__Device = $migrationDb
-$env:ConnectionStrings__Telemetry = $migrationDb
-Remove-Variable migrationDb
-dotnet ef database update --context DeviceDbContext `
-  --project $infrastructure --startup-project $api
-dotnet ef database update --context TelemetryDbContext `
-  --project $infrastructure --startup-project $api
-Remove-Item Env:ConnectionStrings__Device -ErrorAction SilentlyContinue
-Remove-Item Env:ConnectionStrings__Telemetry -ErrorAction SilentlyContinue
+try {
+    # The runtime setting is not overridden with maintenance credentials.
+    $env:ConnectionStrings__HealthMonitor = Read-Host 'Paste migration role Npgsql connection string'
+    dotnet ef database update --context DeviceDbContext `
+      --project $infrastructure --startup-project $api
+    if ($LASTEXITCODE -ne 0) { throw "Device migration failed (exit code $LASTEXITCODE)." }
+
+    dotnet ef database update --context TelemetryDbContext `
+      --project $infrastructure --startup-project $api
+    if ($LASTEXITCODE -ne 0) { throw "Telemetry migration failed (exit code $LASTEXITCODE)." }
+}
+finally {
+    try {
+        [Environment]::SetEnvironmentVariable(
+            'ConnectionStrings__HealthMonitor', $null, [EnvironmentVariableTarget]::Process)
+    }
+    catch {
+        # Cleanup diagnostics must not replace an existing migration failure.
+        Write-Warning 'Could not clear ConnectionStrings__HealthMonitor; remove it manually before continuing.' -WarningAction Continue
+    }
+}
 ```
 
 Use a direct database connection for migrations where reachable. Test session pooler 5432 as the IPv4 fallback; do not use transaction pooler 6543 for this workflow. Hosted deployment applies reviewed EF migration SQL as a controlled release step. Do not call Database.Migrate automatically on each API startup or mix Supabase CLI migrations with EF ownership of the same tables. [R12]
