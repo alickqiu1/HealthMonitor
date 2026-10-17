@@ -76,6 +76,13 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    Concurrency = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionConcurrencyTests'
+        Cases = @('IdenticalConcurrentRequests_CommitOnceAcrossSources',
+            'ConflictingConcurrentRequests_CommitOneCanonicalPayload',
+            'DistinctConcurrentBatches_PreserveStateAndIncidentUniqueness',
+            'FailedWriter_ReleasesLockForWaitingSuccessor')
+    }
 }
 
 function New-SyntheticReport([string]$Group) {
@@ -114,7 +121,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

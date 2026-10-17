@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -87,6 +87,15 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    Concurrency = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionConcurrencyTests'
+        Methods = @{
+            IdenticalConcurrentRequests_CommitOnceAcrossSources = @('')
+            ConflictingConcurrentRequests_CommitOneCanonicalPayload = @('')
+            DistinctConcurrentBatches_PreserveStateAndIncidentUniqueness = @('')
+            FailedWriter_ReleasesLockForWaitingSuccessor = @('')
         }
     }
 }

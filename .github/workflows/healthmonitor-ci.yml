@@ -319,6 +319,24 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/ingestion-locks/ingestion-locks.trx -Group Locks
 
+      # Expanded concurrency is a separate exact inventory; independent pools still target
+      # only this job's verified disposable database, never multiple test processes.
+      - name: Run expanded ingestion concurrency tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionConcurrencyTests" \
+            --logger "trx;LogFileName=ingestion-concurrency.trx" \
+            --results-directory artifacts/test-results/ingestion-concurrency
+
+      - name: Verify expanded ingestion concurrency execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/ingestion-concurrency/ingestion-concurrency.trx -Group Concurrency
+
       - name: Upload integration test reports
         if: always()
         uses: actions/upload-artifact@v4

@@ -54,6 +54,16 @@ internal sealed class TelemetryIngestionTestScenario : TimeProvider
     internal TelemetryDbContext Context(params IInterceptor[] interceptors) =>
         new(new DbContextOptionsBuilder<TelemetryDbContext>().UseNpgsql(_source).AddInterceptors(interceptors).Options);
 
+    /// <summary>Creates an independently pooled source using the same opt-in, target, and connected-name checks.</summary>
+    /// <returns>A caller-owned source that must outlive every writer/context created from it.</returns>
+    internal Task<NpgsqlDataSource> IndependentSourceAsync() => new PostgreSqlTestFixture().CreateDataSourceAsync(Token);
+
+    /// <summary>Uses a separately fixture-validated source without transferring pool ownership to the context.</summary>
+    /// <param name="source">Independent source obtained from IndependentSourceAsync; never an application/hosted source.</param>
+    /// <param name="interceptors">Optional test-only synchronization or failure interception.</param>
+    /// <returns>A caller-owned context; dispose it only after its writer reaches a terminal state.</returns>
+    internal TelemetryDbContext Context(NpgsqlDataSource source, params IInterceptor[] interceptors) =>
+        new(new DbContextOptionsBuilder<TelemetryDbContext>().UseNpgsql(source).AddInterceptors(interceptors).Options);
     /// <summary>Injects cleanup failure through EF's test-only transaction factory replacement.</summary>
     internal TelemetryDbContext CleanupFailureContext(params IInterceptor[] interceptors) =>
         new(new DbContextOptionsBuilder<TelemetryDbContext>().UseNpgsql(_source)
