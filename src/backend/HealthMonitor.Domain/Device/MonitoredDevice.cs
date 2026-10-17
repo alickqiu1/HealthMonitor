@@ -11,8 +11,8 @@ namespace HealthMonitor.Domain.Device;
 /// This entity belongs to the Device bounded context.
 ///
 /// Device identity is immutable after creation. Asset tags and site
-/// codes are normalized to uppercase, while display names and
-/// device types preserve their original casing after trimming.
+/// codes are normalized to uppercase. Display names preserve case after trimming.
+/// Device types must match the approved case-sensitive vocabulary after trimming.
 ///
 /// Retirement is a soft operation that preserves the device record
 /// for historical telemetry and incident references.
@@ -49,8 +49,8 @@ public sealed class MonitoredDevice
     /// Gets the device category.
     /// </summary>
     /// <remarks>
-    /// The value is required and limited to 32 characters.
-    /// This entity does not currently enforce a category allowlist.
+    /// After trimming, the value must be Server, Database, Gateway, or SCADA.
+    /// Case variants are rejected rather than silently normalized.
     /// </remarks>
     public string DeviceType { get; private set; } = string.Empty;
 
@@ -82,15 +82,15 @@ public sealed class MonitoredDevice
     /// <param name="id">Non-empty device identifier.</param>
     /// <param name="assetTag">Required asset tag, maximum 64 characters.</param>
     /// <param name="displayName">Required display name, maximum 120 characters.</param>
-    /// <param name="deviceType">Required device category, maximum 32 characters.</param>
+    /// <param name="deviceType">Canonical Server, Database, Gateway, or SCADA category; surrounding whitespace is trimmed.</param>
     /// <param name="siteCode">Required site identifier, maximum 32 characters.</param>
     /// <exception cref="ArgumentException">
     /// Thrown when the identifier is empty or a required string
-    /// is invalid or exceeds its maximum length after normalization.
+    /// is invalid, uses an unsupported device type, or exceeds its maximum length after normalization.
     /// </exception>
     /// <remarks>
-    /// Preserves the existing constructor contract for callers
-    /// that do not need to control the creation timestamp.
+    /// Uses the same canonical category validation as the explicit-timestamp overload.
+    /// Callers that need a consistent application clock should supply the timestamp explicitly.
     /// </remarks>
     public MonitoredDevice(
         Guid id,
@@ -114,7 +114,7 @@ public sealed class MonitoredDevice
     /// <param name="id">Non-empty device identifier.</param>
     /// <param name="assetTag">Required asset tag, maximum 64 characters.</param>
     /// <param name="displayName">Required display name, maximum 120 characters.</param>
-    /// <param name="deviceType">Required device category, maximum 32 characters.</param>
+    /// <param name="deviceType">Canonical Server, Database, Gateway, or SCADA category; surrounding whitespace is trimmed.</param>
     /// <param name="siteCode">Required site identifier, maximum 32 characters.</param>
     /// <param name="createdAtUtc">
     /// Non-default creation timestamp with a zero UTC offset.
@@ -154,6 +154,15 @@ public sealed class MonitoredDevice
 
         string normalizedDeviceType =
             NormalizeRequired(deviceType, 32, false, nameof(deviceType));
+
+        // Keep inventory categories consistent with the fixed catalog and API vocabulary.
+        // This constructor does not constrain direct SQL writes or EF materialization.
+        if (normalizedDeviceType is not ("Server" or "Database" or "Gateway" or "SCADA"))
+        {
+            throw new ArgumentException(
+                "Device type must be a canonical Server, Database, Gateway, or SCADA category.",
+                nameof(deviceType));
+        }
 
         string normalizedSiteCode =
             NormalizeRequired(siteCode, 32, true, nameof(siteCode));
@@ -229,6 +238,7 @@ public sealed class MonitoredDevice
     /// Parameter name used when reporting validation errors.
     /// </param>
     /// <returns>The trimmed and optionally uppercased value.</returns>
+    /// <exception cref="ArgumentException">The value is blank or exceeds the normalized length limit.</exception>
     /// <remarks>
     /// Length validation is performed after trimming and case
     /// normalization. Internal whitespace is preserved.
@@ -268,6 +278,7 @@ public sealed class MonitoredDevice
     /// <param name="parameterName">
     /// Parameter name used when reporting validation errors.
     /// </param>
+    /// <exception cref="ArgumentException">The timestamp is default or has a nonzero offset.</exception>
     /// <remarks>
     /// A zero offset is required for consistent PostgreSQL
     /// timestamptz persistence and UTC domain semantics.

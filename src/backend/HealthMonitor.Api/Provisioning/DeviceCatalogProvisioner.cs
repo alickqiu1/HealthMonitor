@@ -20,8 +20,8 @@ namespace HealthMonitor.Api.Provisioning;
 /// </remarks>
 internal sealed class DeviceCatalogProvisioner
 {
-    // Edition 1.5 limits in-memory fleet composition to 1,000 devices.
-    private const int MaximumDeviceCount = 1_000;
+    // Edition 1.5 bounds the active fleet; retired history does not consume this capacity.
+    private const int MaximumActiveDeviceCount = 1_000;
 
     private readonly NpgsqlDataSource _dataSource;
 
@@ -31,6 +31,7 @@ internal sealed class DeviceCatalogProvisioner
     /// <param name="dataSource">
     /// Database connection source owned by the private command.
     /// </param>
+    /// <exception cref="ArgumentNullException">The supplied data source is null.</exception>
     public DeviceCatalogProvisioner(NpgsqlDataSource dataSource)
     {
         _dataSource = dataSource
@@ -45,20 +46,24 @@ internal sealed class DeviceCatalogProvisioner
     /// </param>
     /// <returns>
     /// Number of newly inserted device records. Returns zero when
-    /// the catalog is already provisioned.
+    /// the active fixed catalog already matches and the active fleet remains within capacity.
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when the catalog definitions are invalid, an existing
-    /// device conflicts with the fixed inventory, or the device
-    /// capacity would be exceeded.
+    /// device conflicts with the fixed inventory, or the active
+    /// fleet capacity of 1,000 registrations would be exceeded.
     /// </exception>
     /// <remarks>
-    /// All reads, validation, and inserts occur within one transaction.
-    /// A table lock prevents concurrent writers from invalidating the
-    /// checked inventory before insertion finishes.
+    /// Fixed definitions are validated before database access. Inventory reads,
+    /// conflict checks, capacity checks, and inserts share one transaction.
+    /// The table lock prevents concurrent writers from invalidating those checks.
     ///
-    /// An unsuccessful operation leaves the transaction uncommitted;
-    /// disposing it rolls back its changes.
+    /// Retired rows still reserve identities and tags, but do not consume active
+    /// capacity. A retired fixed seed is a conflict, never a request to reactivate it.
+    ///
+    /// Failure before commit rolls back the transaction on disposal. Cancellation
+    /// or loss of the commit acknowledgement does not prove that commit failed;
+    /// retrying provisioning rechecks committed state without replacing matching rows.
     /// </remarks>
     public async Task<int> ProvisionAsync(
         CancellationToken cancellationToken = default)
@@ -153,11 +158,14 @@ internal sealed class DeviceCatalogProvisioner
         int missingCount = devices.Count(
             device => !existingById.ContainsKey(device.Id));
 
-        if (existingById.Count + missingCount >
-            MaximumDeviceCount)
+        // Retired rows remain relevant to identity/tag conflicts, but not fleet capacity.
+        // Matching checks above reject retired fixed seeds before missing active seeds are counted.
+        int existingActiveCount = existingById.Values.Count(device => !device.IsRetired);
+        if (existingActiveCount + missingCount >
+            MaximumActiveDeviceCount)
         {
             throw new InvalidOperationException(
-                "Provisioning would exceed the device catalog limit.");
+                "Provisioning would exceed the active device catalog limit.");
         }
 
         int insertedCount = 0;
@@ -213,6 +221,8 @@ internal sealed class DeviceCatalogProvisioner
     /// <summary>
     /// Validates the complete fixed catalog before database access.
     /// </summary>
+    /// <param name="devices">Fixed seed definitions, including stable IDs and canonical metadata.</param>
+    /// <exception cref="InvalidOperationException">The catalog size, uniqueness, site distribution, or metadata is invalid.</exception>
     private static void ValidateCatalog(
         IReadOnlyList<DeviceSeedDefinition> devices)
     {
@@ -274,6 +284,10 @@ internal sealed class DeviceCatalogProvisioner
     /// Determines whether an existing record represents the exact
     /// active device expected by the fixed inventory.
     /// </summary>
+    /// <param name="existing">Stored inventory metadata, including retirement state.</param>
+    /// <param name="expected">The fixed definition for this identity or asset tag.</param>
+    /// <returns>True only for an exact active match; retired seeds are conflicts.</returns>
+    /// <remarks>Creation timestamps are excluded so repeated provisioning preserves their original values.</remarks>
     private static bool Matches(
         ExistingDevice existing,
         DeviceSeedDefinition expected)

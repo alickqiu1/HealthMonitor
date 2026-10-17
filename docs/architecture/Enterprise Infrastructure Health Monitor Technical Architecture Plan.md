@@ -16,7 +16,9 @@ This edition preserves sections 1–24, original models, bootstrap commands, per
 
 **Step 2 implementation evidence.** Step 2 replaces the earlier Day 2 progress label; it is not a statement that every Step 2 completion gate has passed. The supplied 14 October startup code registers DeviceDbContext and TelemetryDbContext with separate configuration lookups and UseNpgsql calls, selects HealthMonitor.Infrastructure as the migrations assembly, registers controllers and native OpenAPI, and maps controllers after HTTPS redirection and authorization. Its context namespaces are Infrastructure.Data.DeviceContext and Infrastructure.Data.TelemetryContext. This is evidence of startup wiring only; it does not prove a successful database connection, schema deployment, seed, endpoint behavior, or tests.
 
-**Planned alignment after Step 2.** D03 still requires one DI-owned shared NpgsqlDataSource, separate per-schema migration histories, and the section 2 module folders. The shown startup code does not demonstrate those properties; reconcile the existing namespaces and registration without discarding working code. All AI components, contracts, policies, provider setup, UI, and AI tests below are proposed implementation work. No AI endpoint or provider integration is claimed complete.
+**Planned alignment after Step 2.** D03 still requires one DI-owned shared NpgsqlDataSource, separate per-schema migration histories, and explicit module ownership. The historical startup code did not demonstrate those properties; the approved as-built folder exception below preserves existing migrations and namespaces without changing ownership. All AI components, contracts, policies, provider setup, UI, and AI tests below are proposed implementation work. No AI endpoint or provider integration is claimed complete.
+
+**Approved Step 2.D foundation decisions.** Domain construction enforces the four canonical Device types. Capacity is 1,000 active registrations; retired history remains stored and does not consume that capacity. The unused Device write repository is deferred as described in section 7. The as-built layout and test-reference exceptions below are accepted without moving persistence history. These decisions do not close Step 2: independent implementation review and fresh CI verification of the corrections remain required.
 
 **Documentation and testing amendment.** New and changed code must meet the professional documentation and incremental testing requirements in section 19. Complete Step 2 before the retrospective documentation review of older code. Focused tests accompany each step; Step 9 consolidates comprehensive CI and regression evidence.
 
@@ -130,11 +132,13 @@ HealthMonitor/
 HealthMonitor.Api.csproj is the C# ASP.NET Core executable project. Domain, Application, and Infrastructure are its three C# class-library projects. The two test .csproj files are additional C# test projects, outside the four backend production projects. HealthMonitor.slnx includes these six .csproj files and the frontend health-monitor-web.esproj: seven solution projects in total. The frontend's package.json defines its npm dependencies and scripts, while the .esproj provides Visual Studio solution integration.
 
 ### Project reference rules
-Domain references no other solution project, EF Core package, or web framework. Application references Domain only. Infrastructure references Application and Domain. API references Application and Infrastructure as the dependency injection composition root; it maps Application read models to its public V1 DTOs. No inner layer references API. Unit tests reference Domain and Application; integration tests reference API.
+Domain references no other solution project, EF Core package, or web framework. Application references Domain only. Infrastructure references Application and Domain. API references Application and Infrastructure as the dependency injection composition root; it maps Application read models to its public V1 DTOs. No inner layer references API. Unit tests reference Domain and Application; the approved as-built exception also permits their API reference for database-free composition, configuration, and fixed-catalog tests. Integration tests reference API. This test-only exception does not relax production dependency rules.
 
 Device and Telemetry retain separate folders and namespaces inside the shared layer assemblies. They must not use each other's domain entities or persistence implementations. Telemetry Application defines an IDeviceCatalog port returning IntegrationContracts records such as DeviceRegistration. An API-owned adapter implements that port by calling Device Application's IDeviceCatalogQueries. A future HTTP adapter can replace it. Sharing an assembly permits accidental cross-module references, so review and focused architecture tests must enforce the rule; the compiler enforces layer dependencies, not these module boundaries.
 
 Public V1 DTOs live in API/Contracts/V1; module communication records live in Application/IntegrationContracts. There is no separate Contracts project. Neither contract category contains EF entities. Frontend types follow the OpenAPI JSON contract, not CLR assembly references. Checked-in TypeScript contracts are sufficient for MVP; automated generation can follow after the API stabilizes. Future extraction separates the module files and introduces transport adapters without changing public routes and DTOs, provided their semantics remain compatible.
+
+For persistence, the section 2 tree expresses ownership rather than a required relocation. The approved as-built Infrastructure folders are DeviceContext and TelemetryContext, using Infrastructure.Data.DeviceContext and Infrastructure.Data.TelemetryContext namespaces. Initial Device migrations and its snapshot remain in Infrastructure/Migrations; subsequent Device migrations are in DeviceContext/Migrations. Telemetry migrations and snapshot are in TelemetryContext/Migrations. Preserve context attribution and independent histories; do not move or regenerate existing migrations merely to match the illustrative tree.
 
 ### Persistence and runtime rules
 Repositories return aggregates, value records, or explicit paged results and accept cancellation tokens. Query ports support AsNoTracking projections and server aggregation without generic CRUD abstractions. SaveChanges is coordinated once per Telemetry use case. Scoped DbContexts are never shared across requests or simultaneous tasks.
@@ -357,19 +361,21 @@ public sealed class MonitoredDevice
 | Id | uuid primary key; immutable identity |
 | AssetTag | varchar(64), required; uppercase canonical unique tag |
 | DisplayName | varchar(120), required; trim, preserve display case |
-| DeviceType | varchar(32), required; allowlisted demo categories |
+| DeviceType | varchar(32), required; after trimming, exactly Server, Database, Gateway, or SCADA; domain construction rejects case variants and unsupported categories |
 | SiteCode | varchar(32), required; uppercase canonical site code |
 | CreatedAtUtc | timestamptz, required; server UTC clock |
 | RetiredAtUtc | nullable timestamptz; no physical delete in MVP |
 
 ### Device interfaces and invariants
-IMonitoredDeviceRepository supports GetAsync, AddAsync, and SaveChangesAsync for seed or future inventory use cases. IDeviceCatalogQueries returns immutable DeviceRegistration records and catalog lists; it does not return domain entities or IQueryable. Application query projections may return identifiers, names, tags, site, type, and retirement state for API composition.
+IMonitoredDeviceRepository (GetAsync, AddAsync, SaveChangesAsync) is explicitly deferred until a genuine Device write use case requires it. The approved private fixed-catalog provisioner remains the current maintenance path; do not add an unused repository merely to mirror a planned interface. IDeviceCatalogQueries returns immutable DeviceRegistration records and catalog lists; it does not return domain entities or IQueryable. Application query projections may return identifiers, names, tags, site, type, and retirement state for API composition.
 
 DeviceRegistration carries DeviceId, DisplayName, AssetTag, SiteCode, DeviceType, and IsRetired. Telemetry ingestion checks this port before accepting a device identity. The API facade is the only place that combines catalog metadata with telemetry summary records.
 
 Retired devices remain addressable in historical detail but are omitted from active fleet summaries by default. There is no hard delete or inventory editing UI in the MVP. A retirement change racing with a telemetry write may leave one accepted measurement; preserving history is intentional. Strict distributed referential integrity would require a stronger ingestion policy after extraction.
 
 **Decision D04 consequence.** A UUID does not prove the device exists. Catalog validation is a business check, and catalog synchronization becomes an explicit operational responsibility when modules move into different processes.
+
+Domain constructors validate application-created entities; they do not automatically constrain direct SQL writes or EF materialization. The current private provisioner independently validates its fixed seed vocabulary. No Device-type database constraint or schema change is introduced by this correction; direct writers remain responsible for the required invariants.
 
 # 8 Telemetry and incident models
 Telemetry owns measurements, health evaluation, and incident history. Ping means a synthetic health observation, not an actual ICMP or industrial protocol probe. All demo ingestion timestamps come from the server; a future real collector may require distinct observed and received timestamps and clock-skew validation.
@@ -451,17 +457,17 @@ Catalog and telemetry queries are composed through ports. There are no cross-sch
 
 # 10 Migrations and consistency
 ### Migration workflow
-Implement and register both DbContexts in the API before these commands. Both contexts reside in HealthMonitor.Infrastructure, with separate mappings, migration folders, and model snapshots under Device/Persistence and Telemetry/Persistence. Explicit context selection and separate history tables keep their migration streams independent even though they share an assembly. Both design-time factories use the same explicit maintenance-selection policy, independently of runtime registration. Authorized integration mode has highest priority and selects only ConnectionStrings__HealthMonitorIntegrationTest with the existing strict target checks; GitHub Actions without exact test authorization fails. Outside authorized test mode, require explicit Development. Match WebApplication environment-variable precedence: DOTNET_ENVIRONMENT before ASPNETCORE_ENVIRONMENT; absence defaults to Production, and a blank/unknown higher-priority value does not authorize Development fallback. Factory arguments do not override this policy. See [ASP.NET Core environments](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/environments?view=aspnetcore-10.0).
+Implement and register both DbContexts in the API before these commands. Both contexts reside in HealthMonitor.Infrastructure, with separate mappings, context-attributed migration streams, and model snapshots in the approved as-built locations described in section 2. Explicit context selection and separate history tables keep their migration streams independent even though they share an assembly. Both design-time factories use the same explicit maintenance-selection policy, independently of runtime registration. Authorized integration mode has highest priority and selects only ConnectionStrings__HealthMonitorIntegrationTest with the existing strict target checks; GitHub Actions without exact test authorization fails. Outside authorized test mode, require explicit Development. Match WebApplication environment-variable precedence: DOTNET_ENVIRONMENT before ASPNETCORE_ENVIRONMENT; absence defaults to Production, and a blank/unknown higher-priority value does not authorize Development fallback. Factory arguments do not override this policy. See [ASP.NET Core environments](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/environments?view=aspnetcore-10.0).
 ```powershell
 $env:DOTNET_ENVIRONMENT = 'Development'
 $api = 'src/backend/HealthMonitor.Api/HealthMonitor.Api.csproj'
 $infrastructure = 'src/backend/HealthMonitor.Infrastructure/HealthMonitor.Infrastructure.csproj'
 dotnet ef migrations add InitialDevice --context DeviceDbContext `
   --project $infrastructure --startup-project $api `
-  --output-dir Device/Persistence/Migrations
+  --output-dir DeviceContext/Migrations
 dotnet ef migrations add InitialTelemetry --context TelemetryDbContext `
   --project $infrastructure --startup-project $api `
-  --output-dir Telemetry/Persistence/Migrations
+  --output-dir TelemetryContext/Migrations
 ```
 
 Set ConnectionStrings__HealthMonitor temporarily using the DDL-capable maintenance role. In explicit Development this environment value overrides the API ConnectionStrings:HealthMonitor User Secret; an explicitly blank, malformed, or incomplete override fails without fallback. Only absence permits the maintenance User Secret. Non-Development selection must not load User Secrets, and runtime credentials are never a substitute. The private Development-only provisioning command uses the same maintenance key through normal application configuration; it remains separate from HTTP startup. Apply Device migrations before Telemetry. Review generated SQL and create schemas, roles, and default grants deliberately. Migration tooling is not a runtime API operation. [R06, R16]
@@ -492,6 +498,8 @@ finally {
 Use a direct database connection for migrations where reachable. Test session pooler 5432 as the IPv4 fallback; do not use transaction pooler 6543 for this workflow. Hosted deployment applies reviewed EF migration SQL as a controlled release step. Do not call Database.Migrate automatically on each API startup or mix Supabase CLI migrations with EF ownership of the same tables. [R12]
 
 ### Write consistency and concurrent simulation
+Focused advisory-lock acquisition/timeout/release and atomic ingestion transaction verification belong to historical Step 3.4. Receipt repository tests alone do not verify those guarantees; expanded ingestion concurrency remains Step 3.5. Deterministic mid-insert provisioning failure injection remains deferred: pre-insert conflict/capacity preservation tests do not prove rollback after partial insertion.
+
 Authenticate and validate request shape, then compute the canonical hash. Look up an existing receipt before current catalog checks. A matching receipt returns the saved result even if a device has since retired; a changed hash returns 409. Only a new request validates UUIDv7 age and current catalog eligibility. Unknown or retired identities reject the whole new batch with 400 and no writes.
 
 Begin a Telemetry transaction and acquire its fixed transaction-scoped simulator advisory lock; recheck the receipt under the lock before writing. Bound lock waiting to two seconds and return 503 with Retry-After on contention. Capture observation time after the lock, append pings, update state and incidents, persist the receipt, and commit atomically. This protects concurrent first observations and incident openings across API instances. A process-only SemaphoreSlim is insufficient. [R26]
@@ -525,7 +533,7 @@ No-ping staleness produces Offline status but does not automatically create an I
 ### Fleet and drawer query strategy
 For the seeded fleet, the API loads at most 1,000 active catalog projections plus the matching telemetry state projections through module query ports. It composes lightweight immutable rows in memory, applies global search, site/type/status filters, allowed sort, and a deterministic DeviceId tie-breaker, then slices the requested page. Count and page use the same composed snapshot. This is server-side pagination; no measurements are paged into the browser for client-wide processing.
 
-The device cap is explicit. Prevent a seed or future inventory endpoint from exceeding it; return a documented service-capacity error rather than silently truncate a larger catalog. This bounded composition trades scale for a straightforward service seam. It is appropriate for 24 demo devices, not for an unconstrained industrial fleet. If scale expands, introduce a purpose-built dashboard projection with events and documented lag, or a backend aggregation service; the UI contract can remain stable.
+The device cap is explicitly 1,000 active registrations. Retired registrations remain stored for history but consume no active capacity. Under the existing provisioning table lock and transaction, count existing active rows plus missing active fixed seeds; still inspect all stored rows for identity/tag conflicts, and never reactivate a retired fixed seed. Prevent a seed or future inventory endpoint from exceeding active capacity; return a documented service-capacity error rather than silently truncate a larger catalog. This bounded composition trades scale for a straightforward service seam. It is appropriate for 24 demo devices, not for an unconstrained industrial fleet. If scale expands, introduce a purpose-built dashboard projection with events and documented lag, or a backend aggregation service; the UI contract can remain stable.
 
 Fleet summary is global across active devices, independent of grid filters. It returns total, healthy, degraded, offline, unknown, and average latency of fresh successful devices only, plus sampleCount. Recent drawer telemetry and incidents are server-paged database queries. GET domain responses expose asOfUtc; catalog and telemetry are separate reads, so no cross-module serializable snapshot is promised.
 
@@ -1067,6 +1075,8 @@ https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json
 R31–R33 support framework mechanics only; endpoint fields, limits, budget persistence, and the implementation sequence are project design decisions. Provider-specific schema and token-limit documentation must be recorded after provider selection. Existing R01–R30 and their original verification date are preserved. Edition 1.5 does not claim new execution of the bootstrap, Step 2 migrations, or application tests. Step 2 implementation evidence is limited to the supplied startup code described in the opening status record.
 
 # 23 Database provisioning and privileges
+Effective hosted PostgreSQL grants, inherited privileges, runtime DDL denial, TLS certificate trust, and deployment behavior require separately authorized operational verification. Configuration parsing and disposable CI execution do not establish these hosted properties and are not permission to access Supabase.
+
 Use a new Supabase project dedicated to synthetic data. Before migrations, provision hm_migrator as the owner of the two private schemas and hm_runtime as a separate restricted login. These administrative steps are prerequisites, not commands to run as the runtime user. A PostgreSQL psql client is required for the interactive password commands below; it is an additional setup prerequisite, not a NuGet package.
 
 ### Administrative connection

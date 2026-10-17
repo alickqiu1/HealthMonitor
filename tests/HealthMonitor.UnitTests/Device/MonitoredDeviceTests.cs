@@ -11,7 +11,7 @@ namespace HealthMonitor.UnitTests.Device;
 /// </summary>
 /// <remarks>
 /// Tests cover valid construction, input normalization,
-/// required fields, maximum-length boundaries, UTC timestamp
+/// required fields, canonical case-sensitive categories, length boundaries, UTC timestamp
 /// validation, and soft retirement.
 ///
 /// Tests also verify that invalid operations preserve entity
@@ -33,7 +33,7 @@ public sealed class MonitoredDeviceTests
     /// <param name="id">Optional device identifier.</param>
     /// <param name="assetTag">Asset tag to validate.</param>
     /// <param name="displayName">Display name to validate.</param>
-    /// <param name="deviceType">Device category to validate.</param>
+    /// <param name="deviceType">Category passed unchanged to the domain; the helper does not normalize invalid inputs.</param>
     /// <param name="siteCode">Site identifier to validate.</param>
     /// <param name="createdAt">
     /// Optional creation timestamp, defaulting to the fixed test timestamp.
@@ -125,14 +125,51 @@ public sealed class MonitoredDeviceTests
             () => CreateDevice(displayName: value!));
     }
 
+    /// <summary>Checks the canonical vocabulary and trimming through both public constructor paths.</summary>
+    /// <param name="value">An approved category in its canonical case.</param>
+    /// <param name="useCurrentTime">Whether to exercise the convenience overload instead of the controlled timestamp.</param>
+    [Theory]
+    [InlineData("Server", false)]
+    [InlineData("Server", true)]
+    [InlineData("Database", false)]
+    [InlineData("Database", true)]
+    [InlineData("Gateway", false)]
+    [InlineData("Gateway", true)]
+    [InlineData("SCADA", false)]
+    [InlineData("SCADA", true)]
+    public void Constructor_CanonicalDeviceTypes_AreAcceptedAfterTrimming(string value, bool useCurrentTime)
+    {
+        var id = Guid.NewGuid();
+        string padded = $"  {value}  ";
+        var device = useCurrentTime
+            ? new MonitoredDevice(id, "EDM-SRV-001", "Application Server", padded, "EDM")
+            : CreateDevice(id: id, deviceType: padded);
+
+        Assert.Equal(value, device.DeviceType);
+        Assert.Equal(id, device.Id);
+        Assert.Equal(TimeSpan.Zero, device.CreatedAtUtc.Offset);
+        Assert.NotEqual(default, device.CreatedAtUtc);
+        Assert.Null(device.RetiredAtUtc);
+        if (!useCurrentTime)
+            Assert.Equal(CreatedAt, device.CreatedAtUtc);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
+    [InlineData("server")]
+    [InlineData("SERVER")]
+    [InlineData("database")]
+    [InlineData("gateway")]
+    [InlineData("scada")]
+    [InlineData("Router")]
+    [InlineData("Ser ver")]
     public void Constructor_InvalidDeviceType_Throws(string? value)
     {
-        Assert.Throws<ArgumentException>(
+        var error = Assert.Throws<ArgumentException>(
             () => CreateDevice(deviceType: value!));
+        Assert.Equal("deviceType", error.ParamName);
     }
 
     [Theory]
@@ -185,24 +222,17 @@ public sealed class MonitoredDeviceTests
         }
     }
 
+    /// <summary>Rejects arbitrary categories both at and beyond the persisted string length limit.</summary>
+    /// <param name="length">Length of the unsupported category.</param>
+    /// <remarks>A string of length 32 is not valid merely because it fits storage; category membership is also required.</remarks>
     [Theory]
     [InlineData(32)]
     [InlineData(33)]
-    public void Constructor_DeviceType_LengthBoundary(int length)
+    public void Constructor_UnsupportedDeviceType_AtOrBeyondStorageLength_Throws(int length)
     {
-        string value = new('A', length);
-
-        if (length == 32)
-        {
-            Assert.Equal(
-                value,
-                CreateDevice(deviceType: value).DeviceType);
-        }
-        else
-        {
-            Assert.Throws<ArgumentException>(
-                () => CreateDevice(deviceType: value));
-        }
+        var error = Assert.Throws<ArgumentException>(
+            () => CreateDevice(deviceType: new string('A', length)));
+        Assert.Equal("deviceType", error.ParamName);
     }
 
     [Theory]
@@ -364,8 +394,9 @@ public sealed class MonitoredDeviceTests
     /// maximum-length validation is performed.
     /// </summary>
     /// <remarks>
-    /// The raw values exceed their field limits, but their trimmed
-    /// representations meet the exact maximum lengths.
+    /// Tags, names, and sites trim to their exact length limits. The raw category
+    /// exceeds 32 characters but trims to Server, proving trimming precedes both
+    /// length and category validation.
     /// </remarks>
     [Fact]
     public void Constructor_WhitespaceTrimming_PrecedesLengthValidation()
@@ -373,12 +404,12 @@ public sealed class MonitoredDeviceTests
         MonitoredDevice device = CreateDevice(
             assetTag: "  " + new string('a', 64) + "  ",
             displayName: "  " + new string('D', 120) + "  ",
-            deviceType: "  " + new string('T', 32) + "  ",
+            deviceType: new string(' ', 32) + "Server" + new string(' ', 32),
             siteCode: "  " + new string('s', 32) + "  ");
 
         Assert.Equal(new string('A', 64), device.AssetTag);
         Assert.Equal(new string('D', 120), device.DisplayName);
-        Assert.Equal(new string('T', 32), device.DeviceType);
+        Assert.Equal("Server", device.DeviceType);
         Assert.Equal(new string('S', 32), device.SiteCode);
     }    
 }

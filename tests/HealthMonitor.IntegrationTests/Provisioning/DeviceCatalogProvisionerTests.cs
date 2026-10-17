@@ -6,8 +6,10 @@ namespace HealthMonitor.IntegrationTests.Provisioning;
 
 /// <summary>Verifies committed provisioning, rejection-state preservation, capacity, and concurrent calls.</summary>
 /// <remarks>
-/// Uses only the verified healthmonitor_test fixture. The scenario owns all inserted rows and
-/// cleans them even after failed assertions. No test changes existing baseline rows or schemas.
+/// Requires verified healthmonitor_test and exclusive use by one test process. Initialized
+/// scenarios clean only owned rows after completed operations, including assertion failures.
+/// Unresponsive writers cause fail-stop termination without cleanup; discard that disposable
+/// database rather than adopting unknown leftovers. Baseline rows and schemas are preserved.
 /// Conflicts and capacity failures happen before insertion: these tests do not establish rollback
 /// after partial insertion. Deterministic mid-insert failure injection remains explicitly deferred.
 /// </remarks>
@@ -99,22 +101,38 @@ public sealed class DeviceCatalogProvisionerTests
         await AssertRejectedUnchangedAsync(scenario, "Conflicting device ID");
     });
 
+    /// <summary>Checks the active-fleet boundary with retired history and repeat provisioning.</summary>
+    /// <param name="projectedCount">Active registrations expected after inserting all missing fixed seeds.</param>
+    /// <returns>Completion after the scenario verifies committed state or unchanged rejection and performs owned cleanup.</returns>
+    /// <remarks>Raw row totals intentionally exceed the active limit; retired rows must not consume fleet capacity.</remarks>
     [Theory]
     [InlineData(1000)]
     [InlineData(1001)]
     public Task Capacity_ExactLimitSucceeds_OverflowRejects(int projectedCount) => RunAsync(async scenario =>
     {
-        int fillerCount = projectedCount - 24 - scenario.Baseline.Length;
-        Assert.True(fillerCount >= 0, "Capacity setup cannot remove baseline data to make room for the seed.");
-        // Include retired filler to verify the provisioner's total-row cap, distinct from active-query capacity.
-        var fillers = Enumerable.Range(0, fillerCount).Select(i => ExtraRow(retired: i == 0)).ToArray();
+        // The scenario rejects pre-existing fixed seeds, so all 24 start missing.
+        // Size only active fillers; retain baseline history rather than deleting rows for room.
+        int baselineActiveCount = scenario.Baseline.Count(row => !row.RetiredAtUtc.HasValue);
+        int activeFillerCount = projectedCount - 24 - baselineActiveCount;
+        Assert.True(activeFillerCount >= 0, "Capacity setup cannot remove baseline data to make room for the seed.");
+        var retired = ExtraRow(retired: true);
+        // InsertAsync constructs domain entities, so use canonical tags for exact snapshot comparisons.
+        var fillers = Enumerable.Range(0, activeFillerCount).Select(_ => ExtraRow()).Append(retired)
+            .Select(row => row with { AssetTag = row.AssetTag.ToUpperInvariant() }).ToArray();
         await scenario.InsertAsync(fillers);
         if (projectedCount == 1001)
             await AssertRejectedUnchangedAsync(scenario, "catalog limit");
         else
         {
-            Assert.Equal(24, await scenario.CreateProvisioner().ProvisionAsync(scenario.Token));
-            await AssertCatalogAsync(scenario, 1000);
+            var provisioner = scenario.CreateProvisioner();
+            Assert.Equal(24, await provisioner.ProvisionAsync(scenario.Token));
+            await AssertCatalogAsync(scenario, scenario.Baseline.Length + activeFillerCount + 1 + 24);
+            var first = await scenario.SnapshotAsync();
+            Assert.Equal(1000, first.Count(row => !row.RetiredAtUtc.HasValue));
+            Assert.True(first.Length > 1000, "Retired history must not consume active fleet capacity.");
+            Assert.All(fillers, row => Assert.Contains(row, first));
+            Assert.Equal(0, await provisioner.ProvisionAsync(scenario.Token));
+            Assert.Equal(first, await scenario.SnapshotAsync());
         }
     });
 
@@ -171,7 +189,10 @@ public sealed class DeviceCatalogProvisionerTests
         await AssertCatalogAsync(scenario, scenario.Baseline.Length + 24);
     });
 
-    /// <summary>Checks every fixed registration and unrelated-row preservation after commit.</summary>
+    /// <summary>Checks fixed registrations and pre-existing baseline preservation in a committed snapshot.</summary>
+    /// <param name="scenario">Initialized scenario owning only this test's inserted identities.</param>
+    /// <param name="expectedCount">Total stored rows, including retired history; not the active-capacity count.</param>
+    /// <returns>Completion after all fixed rows, baseline rows, and the total count have been checked.</returns>
     private static async Task AssertCatalogAsync(DeviceProvisioningTestScenario scenario, int expectedCount)
     {
         var rows = await scenario.SnapshotAsync();
@@ -191,6 +212,9 @@ public sealed class DeviceCatalogProvisionerTests
     }
 
     /// <summary>Asserts a specific pre-insert rejection and complete committed-state preservation.</summary>
+    /// <param name="scenario">Initialized scenario with committed conflict or capacity setup.</param>
+    /// <param name="message">Expected diagnostic fragment distinguishing the intended rejection path.</param>
+    /// <returns>Completion after comparing full committed snapshots before and after rejection.</returns>
     private static async Task AssertRejectedUnchangedAsync(DeviceProvisioningTestScenario scenario, string message)
     {
         var before = await scenario.SnapshotAsync();
