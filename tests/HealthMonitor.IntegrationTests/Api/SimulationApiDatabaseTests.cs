@@ -48,8 +48,11 @@ public sealed class SimulationApiDatabaseTests
         Assert.Equal(600, detail.RootElement.GetProperty("latencyMs").GetInt32()); Assert.Equal(30m, detail.RootElement.GetProperty("cpuPercent").GetDecimal());
         Assert.Equal(test.Now, detail.RootElement.GetProperty("lastObservedAtUtc").GetDateTimeOffset());
         using var pings = await JsonAsync(test.GetAsync($"/api/v1/devices/{device}/telemetry?toUtc=" + Uri.EscapeDataString(test.Now.AddTicks(1).ToString("O"))));
-        Assert.Contains(pings.RootElement.GetProperty("items").EnumerateArray(), ping => ping.GetProperty("batchId").GetGuid() == batch
-            && ping.GetProperty("latencyMs").GetInt32() == 600);
+        // The public ping DTO intentionally omits receipt identity; the controlled clock uniquely identifies the new observation.
+        var persisted = Assert.Single(pings.RootElement.GetProperty("items").EnumerateArray(), ping =>
+            ping.GetProperty("deviceId").GetGuid() == device && ping.GetProperty("observedAtUtc").GetDateTimeOffset() == test.Now);
+        Assert.Equal("Success", persisted.GetProperty("outcome").GetString());
+        Assert.Equal(600, persisted.GetProperty("latencyMs").GetInt32()); Assert.Equal(30m, persisted.GetProperty("cpuPercent").GetDecimal());
         using var incidents = await JsonAsync(test.GetAsync($"/api/v1/devices/{device}/incidents?state=open"));
         Assert.Equal("Latency", Assert.Single(incidents.RootElement.GetProperty("items").EnumerateArray()).GetProperty("kind").GetString());
         using var grid = await JsonAsync(test.GetAsync("/api/v1/devices?q=" + test.Marker + "&status=Degraded"));
