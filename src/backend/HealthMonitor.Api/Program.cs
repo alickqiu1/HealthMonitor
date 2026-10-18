@@ -85,6 +85,7 @@ builder.Services.AddDemoProducer(builder.Configuration);
 builder.Services.AddTelemetryRetention();
 
 builder.Services.AddReadApi();
+builder.Services.AddReadCors(builder.Configuration);
 
 // Register native ASP.NET Core OpenAPI document generation.
 builder.Services.AddOpenApi();
@@ -103,6 +104,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseReadApiErrors();
 app.UseHttpsRedirection();
+app.UseRouting();
+// Browser response access is evaluated after routing and before endpoint authorization.
+app.UseCors(ReadCorsComposition.PolicyName);
 app.UseAuthorization();
 app.MapControllers();
 

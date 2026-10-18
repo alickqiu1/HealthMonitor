@@ -99,7 +99,7 @@ $fixtures = @{
             'Incidents_AllowlistedStateAndPagingWithoutDateFilters',
             'Metrics_RemainsGlobalAndPreservesFractionalFreshMean',
             'Failures_ReturnSanitizedProblemsAndSafeLogs',
-            'RequestCancellation_ReachesPortsWithoutInternalError')
+            'Cors_AllowedOriginsReceiveExactReadHeaders', 'Cors_UntrustedAndMissingOriginsDoNotGainBrowserAccess', 'Cors_PreflightGrantsOnlyConfiguredReadMethodAndHeader', 'RequestCancellation_ReachesPortsWithoutInternalError')
     }
     History = @{
         Class = 'HealthMonitor.IntegrationTests.Telemetry.DeviceHistoryQueriesTests'

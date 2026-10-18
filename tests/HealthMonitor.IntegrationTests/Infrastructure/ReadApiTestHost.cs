@@ -116,6 +116,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                 .ConfigureServices(services =>
                 {
                     services.AddFleetReads(new ConfigurationBuilder().Build());
+                    services.AddReadCors(new ConfigurationBuilder().Build());
                     configure(services);
                     services.AddReadApi();
                 })
@@ -129,6 +130,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                         finally { done.TrySetResult(); }
                     });
                     app.UseReadApiErrors(); app.UseRouting();
+                    app.UseCors(ReadCorsComposition.PolicyName);
                     app.UseEndpoints(endpoints => endpoints.MapControllers());
                 }));
     }

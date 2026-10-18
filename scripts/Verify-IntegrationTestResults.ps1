@@ -115,6 +115,9 @@ $inventories = @{
             Incidents_AllowlistedStateAndPagingWithoutDateFilters = @('')
             Metrics_RemainsGlobalAndPreservesFractionalFreshMean = @('')
             Failures_ReturnSanitizedProblemsAndSafeLogs = @('')
+            Cors_AllowedOriginsReceiveExactReadHeaders = @('')
+            Cors_UntrustedAndMissingOriginsDoNotGainBrowserAccess = @('')
+            Cors_PreflightGrantsOnlyConfiguredReadMethodAndHeader = @('')
             RequestCancellation_ReachesPortsWithoutInternalError = @('')
         }
     }

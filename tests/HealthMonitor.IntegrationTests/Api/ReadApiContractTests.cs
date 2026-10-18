@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text.Json;
+using HealthMonitor.Api.Composition;
+using Microsoft.Extensions.Configuration;
 using HealthMonitor.Infrastructure.Data.DeviceContext;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -13,7 +15,7 @@ using HealthMonitor.IntegrationTests.Infrastructure;
 namespace HealthMonitor.IntegrationTests.Api;
 
 /// <summary>Database-free HTTP integration through the shared production read pipeline and explicit fake application ports.</summary>
-/// <remarks>These ten cases prove transport/composition, not PostgreSQL, full Program startup, HTTPS, workers, or deployment.</remarks>
+/// <remarks>These thirteen cases prove transport/composition, not PostgreSQL, full Program startup, HTTPS, workers, or deployment.</remarks>
 public sealed class ReadApiContractTests
 {
     private const string Canary = "credential-canary-42";
@@ -296,6 +298,95 @@ public sealed class ReadApiContractTests
         Assert.All(host.Logs.Entries, entry => Assert.DoesNotContain(Canary, entry));
     }
 
+    /// <summary>Uses explicit fake ports and two configured origins so the real CORS middleware must vary cached responses by origin.</summary>
+    /// <returns>A caller-owned feature host; no runtime configuration, database, or external service is used.</returns>
+    private static Task<ReadApiTestHost> CorsHostAsync() => ReadApiTestHost.StartAsync(services =>
+    {
+        var ports = new FakeReadPorts();
+        services.AddSingleton<IDeviceCatalogQueries>(ports);
+        services.AddSingleton<HealthMonitor.Application.Telemetry.IDeviceHealthQueries>(ports);
+        services.AddSingleton<HealthMonitor.Application.Telemetry.IDeviceHistoryQueries>(ports);
+        services.AddSingleton<TimeProvider>(ports);
+        services.AddReadCors(new ConfigurationBuilder().AddInMemoryCollection(new[]
+        {
+            new KeyValuePair<string, string?>("Cors:AllowedOrigins:0", "http://localhost:5173"),
+            new KeyValuePair<string, string?>("Cors:AllowedOrigins:1", "https://spa.example")
+        }).Build());
+    });
+
+    /// <summary>Tests actual wire permissions; a successful preflight status alone does not grant the requested browser operation.</summary>
+    /// <param name="response">Middleware response whose permission headers are inspected.</param>
+    /// <param name="header">Permission header to inspect, treating comma-separated values individually.</param>
+    /// <param name="value">Requested permission token or serialized origin.</param>
+    /// <returns>True when the wire header grants the requested value.</returns>
+    private static bool Allows(HttpResponseMessage response, string header, string value) =>
+        response.Headers.TryGetValues(header, out var values)
+        && values.SelectMany(entry => entry.Split(',')).Any(entry => string.Equals(entry.Trim(), value, StringComparison.OrdinalIgnoreCase));
+
+    [Fact]
+    public async Task Cors_AllowedOriginsReceiveExactReadHeaders()
+    {
+        await using var host = await CorsHostAsync();
+        foreach (var origin in new[] { "http://localhost:5173", "https://spa.example" })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/devices");
+            request.Headers.Add("Origin", origin);
+            using var response = await host.Client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal(origin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+            Assert.True(Allows(response, "Vary", "Origin"));
+            Assert.False(response.Headers.Contains("Access-Control-Allow-Credentials"));
+            // JSON Content-Type is already CORS-safelisted; no extra exposed-header configuration is needed.
+            Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+            Assert.False(response.Headers.Contains("Access-Control-Expose-Headers"));
+        }
+    }
+
+    [Fact]
+    public async Task Cors_UntrustedAndMissingOriginsDoNotGainBrowserAccess()
+    {
+        await using var host = await CorsHostAsync();
+        foreach (var origin in new string?[] { null, "null", "https://untrusted.example", "http://localhost:5174", "https://spa.example.attacker.invalid", "http://spa.example" })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/devices");
+            if (origin is not null) request.Headers.Add("Origin", origin);
+            using var response = await host.Client.SendAsync(request);
+            // CORS is deliberately not authorization: direct callers and disallowed origins still reach public GET routes.
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Access-Control-Allow-Origin"));
+            Assert.False(response.Headers.Contains("Access-Control-Allow-Credentials"));
+        }
+    }
+
+    [Fact]
+    public async Task Cors_PreflightGrantsOnlyConfiguredReadMethodAndHeader()
+    {
+        await using var host = await CorsHostAsync();
+        foreach (var (method, header, allowed) in new[]
+        {
+            ("GET", "Content-Type", true), ("POST", "Content-Type", false),
+            ("PUT", "Content-Type", false), ("GET", "X-Demo-Operator-Key", false)
+        })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/devices");
+            request.Headers.Add("Origin", "https://spa.example");
+            request.Headers.Add("Access-Control-Request-Method", method);
+            request.Headers.Add("Access-Control-Request-Headers", header);
+            using var response = await host.Client.SendAsync(request);
+            bool permission = Allows(response, "Access-Control-Allow-Origin", "https://spa.example")
+                && Allows(response, "Access-Control-Allow-Methods", method)
+                && Allows(response, "Access-Control-Allow-Headers", header);
+            Assert.Equal(allowed, permission);
+            Assert.False(response.Headers.Contains("Access-Control-Allow-Credentials"));
+            if (allowed)
+            {
+                Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                Assert.Equal("GET", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Methods")));
+                Assert.Equal("Content-Type", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Headers")));
+                Assert.True(Allows(response, "Vary", "Origin"));
+            }
+        }
+    }
     [Fact]
     public async Task RequestCancellation_ReachesPortsWithoutInternalError()
     {
