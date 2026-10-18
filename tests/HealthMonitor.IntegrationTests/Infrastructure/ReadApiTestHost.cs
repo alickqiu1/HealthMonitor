@@ -15,11 +15,12 @@ using Microsoft.Extensions.Hosting;
 
 namespace HealthMonitor.IntegrationTests.Infrastructure;
 
-/// <summary>Runs the shared read feature with WebApplicationFactory and its TestServer, without executing Program or database workers.</summary>
-/// <remarks>No appsettings/User Secrets or application database settings are loaded. This is not full startup, Kestrel, HTTPS, or deployment proof.</remarks>
+/// <summary>Runs the shared read feature with WebApplicationFactory/TestServer, using explicit fake ports or fixture-verified database services.</summary>
+/// <remarks>Never executes Program, loads application secrets/runtime settings, or starts workers. Not full startup, Kestrel, HTTPS, or deployment proof.</remarks>
 internal sealed class ReadApiTestHost : IAsyncDisposable
 {
     private readonly FeatureFactory factory;
+    private readonly RequestCompletion requests;
     /// <summary>Owned TestServer client; each request has a ten-second outer timeout.</summary>
     internal HttpClient Client { get; }
     /// <summary>Admitted formatted diagnostics, including attached exceptions if a pipeline leaks one.</summary>
@@ -27,11 +28,11 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
     /// <summary>Feature-only services for explicit diagnostic policy assertions.</summary>
     internal IServiceProvider Services => factory.Services;
 
-    /// <summary>Starts only the explicit feature WebHost through the existing factory API, without invoking the API entrypoint.</summary>
-    private ReadApiTestHost(FakeReadPorts ports)
+    /// <summary>Starts the explicit feature WebHost without invoking the API entrypoint.</summary>
+    private ReadApiTestHost(Action<IServiceCollection> configure, bool providerSpecificBroadRule)
     {
-        Logs = new SafeReadLogs();
-        factory = new FeatureFactory(ports, Logs);
+        Logs = new SafeReadLogs(); requests = new RequestCompletion();
+        factory = new FeatureFactory(configure, Logs, requests, providerSpecificBroadRule);
         try
         {
             Client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
@@ -40,58 +41,96 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
         catch { factory.Dispose(); throw; }
     }
 
-    /// <summary>Creates the caller-owned feature host; startup has no user background work or external I/O.</summary>
-    /// <param name="ports">Controlled inventory, telemetry, history, and clock facts.</param>
-    /// <returns>Started factory/TestServer host.</returns>
-    /// <remarks>The CI group's independent hang deadline also bounds unexpected framework startup/shutdown stalls.</remarks>
-    internal static Task<ReadApiTestHost> StartAsync(FakeReadPorts ports) => Task.FromResult(new ReadApiTestHost(ports));
+    /// <summary>Registers only controlled fake ports, keeping local HTTP tests entirely database-free.</summary>
+    /// <param name="ports">Controlled application facts and clock.</param>
+    /// <returns>Started caller-owned host.</returns>
+    internal static Task<ReadApiTestHost> StartAsync(FakeReadPorts ports) => StartAsync(services =>
+    {
+        services.RemoveAll<IDeviceHealthQueries>(); services.RemoveAll<IDeviceHistoryQueries>(); services.RemoveAll<TimeProvider>();
+        services.AddSingleton<IDeviceCatalogQueries>(ports); services.AddSingleton<IDeviceHealthQueries>(ports);
+        services.AddSingleton<IDeviceHistoryQueries>(ports); services.AddSingleton<TimeProvider>(ports);
+    }, ports.ProviderSpecificBroadRule);
 
-    /// <summary>Disposes the client then factory after tests have awaited every request; no test database is owned here.</summary>
+    /// <summary>Builds only the shared read feature with explicit services, never application database configuration.</summary>
+    /// <param name="configure">Fake services or contexts on an independently fixture-verified disposable source.</param>
+    /// <param name="providerSpecificBroadRule">Whether a diagnostic test deliberately injects a broad conflicting rule.</param>
+    /// <returns>Started caller-owned host; external sources/connections/transactions remain caller-owned.</returns>
+    internal static Task<ReadApiTestHost> StartAsync(Action<IServiceCollection> configure, bool providerSpecificBroadRule = false) =>
+        Task.FromResult(new ReadApiTestHost(configure, providerSpecificBroadRule));
+
+    /// <summary>Stops client admission, independently drains server execution, then stops/disposes the factory before external database cleanup.</summary>
+    /// <remarks>Client cancellation alone is not proof that a query stopped. Unresponsive server execution triggers the existing fail-stop deadline.</remarks>
     public async ValueTask DisposeAsync()
     {
         Client.Dispose();
+        await requests.StopAndDrainAsync();
         await factory.DisposeAsync();
     }
 
+    /// <summary>Owns server completion barriers separately from possibly canceled HttpClient tasks.</summary>
+    private sealed class RequestCompletion
+    {
+        private readonly object gate = new();
+        private readonly List<Task> work = new();
+        private bool closed;
+
+        /// <summary>Admits a pipeline before database work; late requests after shutdown cannot enter the feature.</summary>
+        internal TaskCompletionSource? Enter()
+        {
+            lock (gate)
+            {
+                if (closed) return null;
+                var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                work.Add(done.Task); return done;
+            }
+        }
+        /// <summary>Closes admission atomically and waits for every admitted server pipeline before any source/transaction can be disposed.</summary>
+        internal Task StopAndDrainAsync()
+        {
+            Task[] pending;
+            lock (gate) { closed = true; pending = work.ToArray(); }
+            return TelemetryIngestionTestScenario.DrainWritersAsync(pending);
+        }
+    }
+
     /// <summary>Overrides factory host creation so Program, runtime credential selection, and workers cannot run.</summary>
-    /// <param name="ports">Only application port implementations registered for this host.</param>
-    /// <param name="logs">Diagnostic capture after production-style category filtering.</param>
-    private sealed class FeatureFactory(FakeReadPorts ports, SafeReadLogs logs) : WebApplicationFactory<global::Program>
+    /// <param name="configure">Explicit read service overrides.</param>
+    /// <param name="logs">Diagnostic capture after production filtering.</param>
+    /// <param name="requests">Independent server-completion barriers.</param>
+    /// <param name="broadRule">Whether the logger-rule regression condition is enabled.</param>
+    private sealed class FeatureFactory(Action<IServiceCollection> configure, SafeReadLogs logs, RequestCompletion requests, bool broadRule)
+        : WebApplicationFactory<global::Program>
     {
         /// <inheritdoc />
         protected override IHostBuilder CreateHostBuilder() => new HostBuilder()
             .UseEnvironment("Testing")
-            .ConfigureWebHost(web => web
-            .UseEnvironment("Testing")
-            .ConfigureAppConfiguration((_, configuration) => configuration.Sources.Clear())
-            .ConfigureLogging(logging =>
-            {
-                logging.ClearProviders().SetMinimumLevel(LogLevel.Information)
-                    .AddFilter("Microsoft.AspNetCore", LogLevel.Warning)
-                    // Specific category rules deliberately conflict with the production provider boundary.
-                    .AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Trace)
-                    .AddFilter("Npgsql.Command", LogLevel.Trace).AddProvider(logs);
-                // This broad provider rule outranks neutral category rules and must still be blocked for EF/Npgsql only.
-                if (ports.ProviderSpecificBroadRule) logging.AddFilter<SafeReadLogs>(null, LogLevel.Trace);
-            })
-            .ConfigureServices(services =>
-            {
-                services.AddFleetReads(new ConfigurationBuilder().Build());
-                services.RemoveAll<IDeviceHealthQueries>();
-                services.RemoveAll<IDeviceHistoryQueries>();
-                services.RemoveAll<TimeProvider>();
-                services.AddSingleton<IDeviceCatalogQueries>(ports);
-                services.AddSingleton<IDeviceHealthQueries>(ports);
-                services.AddSingleton<IDeviceHistoryQueries>(ports);
-                services.AddSingleton<TimeProvider>(ports);
-                services.AddReadApi();
-            })
-            .Configure(app =>
-            {
-                app.UseReadApiErrors();
-                app.UseRouting();
-                app.UseEndpoints(endpoints => endpoints.MapControllers());
-            }));
+            .ConfigureWebHost(web => web.UseEnvironment("Testing")
+                .ConfigureAppConfiguration((_, configuration) => configuration.Sources.Clear())
+                .ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders().SetMinimumLevel(LogLevel.Information).AddFilter("Microsoft.AspNetCore", LogLevel.Warning)
+                        .AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Trace)
+                        .AddFilter("Npgsql.Command", LogLevel.Trace).AddProvider(logs);
+                    if (broadRule) logging.AddFilter<SafeReadLogs>(null, LogLevel.Trace);
+                })
+                .ConfigureServices(services =>
+                {
+                    services.AddFleetReads(new ConfigurationBuilder().Build());
+                    configure(services);
+                    services.AddReadApi();
+                })
+                .Configure(app =>
+                {
+                    app.Use(async (context, next) =>
+                    {
+                        var done = requests.Enter();
+                        if (done is null) { context.Response.StatusCode = 503; return; }
+                        try { await next(); }
+                        finally { done.TrySetResult(); }
+                    });
+                    app.UseReadApiErrors(); app.UseRouting();
+                    app.UseEndpoints(endpoints => endpoints.MapControllers());
+                }));
     }
 }
 

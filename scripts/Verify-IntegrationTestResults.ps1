@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -89,6 +89,18 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    ReadApi = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.ReadApiDatabaseTests'
+        Methods = @{
+            GridAndMetrics_ReadRealCatalogAndTelemetry = @('')
+            Grid_GlobalFiltersOrderingAndPagingUseRealRows = @('')
+            Detail_RetiredAndUnknownUseRealCatalog = @('')
+            Telemetry_HalfOpenRangeAndPagingThroughHttp = @('')
+            Incidents_OpenResolvedAllAndPagingThroughHttp = @('')
+            Validation_RejectedBeforeDatabaseCommands = @('')
+            ProviderFailure_ReturnsSanitizedProblemThroughRealContext = @('')
         }
     }
     Contract = @{

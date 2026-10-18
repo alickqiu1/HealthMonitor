@@ -78,6 +78,16 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    ReadApi = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.ReadApiDatabaseTests'
+        Cases = @('GridAndMetrics_ReadRealCatalogAndTelemetry',
+            'Grid_GlobalFiltersOrderingAndPagingUseRealRows',
+            'Detail_RetiredAndUnknownUseRealCatalog',
+            'Telemetry_HalfOpenRangeAndPagingThroughHttp',
+            'Incidents_OpenResolvedAllAndPagingThroughHttp',
+            'Validation_RejectedBeforeDatabaseCommands',
+            'ProviderFailure_ReturnsSanitizedProblemThroughRealContext')
+    }
     Contract = @{
         Class = 'HealthMonitor.IntegrationTests.Api.ReadApiContractTests'
         Cases = @('Grid_DefaultsSerializeExactV1ShapeAndNullMeasurements',
@@ -172,7 +182,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

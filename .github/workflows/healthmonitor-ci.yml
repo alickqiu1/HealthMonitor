@@ -405,6 +405,22 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/history/history.trx -Group History
 
+      - name: Run PostgreSQL read API integration tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Api.ReadApiDatabaseTests" \
+            --logger "trx;LogFileName=read-api.trx" \
+            --results-directory artifacts/test-results/read-api
+
+      - name: Verify PostgreSQL read API execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/read-api/read-api.trx -Group ReadApi
+
       - name: Upload integration test reports
         if: always()
         uses: actions/upload-artifact@v4
