@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -87,6 +87,15 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    HealthQueries = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.DeviceHealthQueriesTests'
+        Methods = @{
+            NoStates_ReturnsEmptyAndUntracked = @('')
+            SelectedStates_ProjectsOrderedDistinctSnapshotsAndPreservesLastSuccess = @('')
+            ExactCapacityAndDuplicateInputs_AcceptsThousandDistinctAndCollapsesDuplicates = @('')
+            QueryFailure_PropagatesWithoutEmptyFallback = @('')
         }
     }
     Retention = @{

@@ -76,6 +76,14 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    HealthQueries = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.DeviceHealthQueriesTests'
+        Cases = @(
+            'NoStates_ReturnsEmptyAndUntracked',
+            'SelectedStates_ProjectsOrderedDistinctSnapshotsAndPreservesLastSuccess',
+            'ExactCapacityAndDuplicateInputs_AcceptsThousandDistinctAndCollapsesDuplicates',
+            'QueryFailure_PropagatesWithoutEmptyFallback')
+    }
     Retention = @{
         Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryRetentionStoreTests'
         Cases = @(
@@ -137,7 +145,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

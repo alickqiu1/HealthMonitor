@@ -355,6 +355,22 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/retention/retention.trx -Group Retention
 
+      - name: Run latest-state health query integration tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Telemetry.DeviceHealthQueriesTests" \
+            --logger "trx;LogFileName=health-queries.trx" \
+            --results-directory artifacts/test-results/health-queries
+
+      - name: Verify latest-state health query execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/health-queries/health-queries.trx -Group HealthQueries
+
       - name: Upload integration test reports
         if: always()
         uses: actions/upload-artifact@v4
