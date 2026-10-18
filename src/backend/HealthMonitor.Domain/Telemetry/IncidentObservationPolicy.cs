@@ -72,8 +72,8 @@ public static class IncidentObservationPolicy
     // The thresholds represent the maximum healthy measurement.
     // A measurement must be strictly greater than its threshold
     // to indicate a violation.
-    private const int LatencyWarningMs = 250;
-    private const decimal CpuWarningPercent = 80m;
+    private const int LatencyWarningMs = TelemetryThresholds.LatencyWarningMs;
+    private const decimal CpuWarningPercent = TelemetryThresholds.CpuWarningPercent;
 
     /// <summary>
     /// Determines the required incident action for an observation
