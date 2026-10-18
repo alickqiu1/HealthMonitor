@@ -31,7 +31,9 @@ $fixtures = @{
             'GetActiveAsync_ExcludesRetiredAndPreservesCompleteOrderedProjection',
             'GetActiveAsync_ExactCapacityAndOverflow_AreNotSilentlyTruncated(targetCount: 1000)',
             'GetActiveAsync_ExactCapacityAndOverflow_AreNotSilentlyTruncated(targetCount: 1001)',
-            'Queries_PreCanceledToken_PropagatesCancellation')
+            'Queries_PreCanceledToken_PropagatesCancellation',
+            'GetDetailAsync_ActiveAndRetired_ProjectsExactLifecycleWithoutTracking',
+            'GetDetailAsync_UnknownAndEmpty_ReturnNullWithoutTracking')
     }
     Provisioning = @{
         Class = 'HealthMonitor.IntegrationTests.Provisioning.DeviceCatalogProvisionerTests'

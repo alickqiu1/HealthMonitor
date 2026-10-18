@@ -7,7 +7,7 @@ namespace HealthMonitor.UnitTests.Device;
 /// <summary>Verifies the module bridge forwards inputs/results and does not reinterpret failures or retirement.</summary>
 public sealed class DeviceCatalogAdapterTests
 {
-    /// <summary>Captures explicit lookup forwarding and rejects fleet-list requests outside Telemetry's port.</summary>
+    /// <summary>Captures explicit lookup forwarding and rejects fleet/detail requests outside Telemetry's port.</summary>
     private sealed class StubQueries : IDeviceCatalogQueries
     {
         public Func<IReadOnlyCollection<Guid>, CancellationToken, Task<IReadOnlyList<DeviceRegistration>>> Lookup { get; init; }
@@ -17,6 +17,10 @@ public sealed class DeviceCatalogAdapterTests
             IReadOnlyCollection<Guid> deviceIds, CancellationToken cancellationToken = default) =>
             Lookup(deviceIds, cancellationToken);
 
+        /// <summary>Rejects detail reads outside this fake's existing use case.</summary>
+        public Task<DeviceCatalogDetail?> GetDetailAsync(Guid deviceId, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Unexpected detail query in this scenario.");
+        /// <inheritdoc />
         public Task<IReadOnlyList<DeviceRegistration>> GetActiveAsync(CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Telemetry must not request fleet listing.");
     }

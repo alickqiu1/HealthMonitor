@@ -15,6 +15,13 @@ public interface IDeviceCatalogQueries
     /// <summary>The Edition 1.5 active-fleet composition capacity.</summary>
     const int MaximumActiveDevices = 1_000;
 
+    /// <summary>Reads one known registration and lifecycle metadata, including retired inventory.</summary>
+    /// <param name="deviceId">Explicit identity; an empty UUID is unknown without database access.</param>
+    /// <param name="cancellationToken">Cancellation checked first, including for an empty UUID.</param>
+    /// <returns>Immutable detail, or null for an unknown identity. Provider failures propagate.</returns>
+    /// <exception cref="OperationCanceledException">Cancellation was requested.</exception>
+    Task<DeviceCatalogDetail?> GetDetailAsync(Guid deviceId, CancellationToken cancellationToken = default);
+
     /// <summary>Looks up known registrations without excluding retired devices.</summary>
     /// <param name="deviceIds">Non-null requested IDs; duplicates are collapsed. No ingestion batch limit applies here.</param>
     /// <param name="cancellationToken">Cancellation for the complete operation, including empty requests.</param>

@@ -6,7 +6,7 @@ namespace HealthMonitor.UnitTests.Device;
 /// <summary>Verifies catalog guards and the empty-request path without database configuration or access.</summary>
 public sealed class DeviceCatalogQueriesTests
 {
-    // No provider is configured: these tests would fail if the empty path tried database work.
+    /// <summary>Omits the provider deliberately so guards and empty paths fail if they attempt database work.</summary>
     private static DeviceDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<DeviceDbContext>().Options);
 
@@ -69,5 +69,31 @@ public sealed class DeviceCatalogQueriesTests
         await using var context = CreateContext();
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new DeviceCatalogQueries(context).GetActiveAsync());
+    }
+    [Fact]
+    public async Task GetDetailAsync_Empty_ReturnsNullWithoutProvider()
+    {
+        await using var context = CreateContext();
+        Assert.Null(await new DeviceCatalogQueries(context).GetDetailAsync(Guid.Empty));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetDetailAsync_PreCanceled_IncludingEmpty_RejectsBeforeProvider(bool empty)
+    {
+        await using var context = CreateContext();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var failure = await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new DeviceCatalogQueries(context).GetDetailAsync(empty ? Guid.Empty : Guid.NewGuid(), cancellation.Token));
+        Assert.Equal(cancellation.Token, failure.CancellationToken);
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_ProviderFailure_DoesNotMasqueradeAsUnknown()
+    {
+        await using var context = CreateContext();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new DeviceCatalogQueries(context).GetDetailAsync(Guid.NewGuid()));
     }
 }

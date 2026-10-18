@@ -87,6 +87,9 @@ internal sealed class ProducerTestRig : IAsyncDisposable
                 new DeviceRegistration(id, "Test", "TEST", "DEN", "Server", !_owner.Active.Contains(id)))
                 .Append(new(Guid.NewGuid(), "Other", "OTHER", "DEN", "Server", false)).ToArray());
         }
+        /// <summary>Rejects detail reads outside this fake's existing use case.</summary>
+        public Task<DeviceCatalogDetail?> GetDetailAsync(Guid deviceId, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Unexpected detail query in this scenario.");
         /// <inheritdoc />
         public Task<IReadOnlyList<DeviceRegistration>> GetActiveAsync(CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The producer must select only its fixed fleet.");

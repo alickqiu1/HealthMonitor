@@ -9,7 +9,7 @@ namespace HealthMonitor.Api.Fleet;
 internal sealed record FleetSnapshot(DateTimeOffset AsOfUtc, IReadOnlyList<FleetRow> Rows, FleetMetrics Metrics);
 
 /// <summary>Inventory and computed health without exposing persistence entities or future HTTP contracts.</summary>
-/// <param name="DeviceId">Active catalog identity.</param>
+/// <param name="DeviceId">Stable catalog identity; explicit detail reads may include retired registrations.</param>
 /// <param name="DisplayName">Inventory display name.</param>
 /// <param name="AssetTag">Inventory asset tag.</param>
 /// <param name="SiteCode">Inventory site.</param>

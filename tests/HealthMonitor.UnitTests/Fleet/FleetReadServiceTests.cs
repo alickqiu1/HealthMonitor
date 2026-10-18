@@ -280,6 +280,9 @@ public sealed class FleetReadServiceTests
         internal IReadOnlyCollection<Guid> Requested = Array.Empty<Guid>();
         internal CancellationToken LastToken;
 
+        /// <summary>Rejects detail reads outside this fake's existing use case.</summary>
+        public Task<DeviceCatalogDetail?> GetDetailAsync(Guid deviceId, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Unexpected detail query in this scenario.");
         /// <inheritdoc />
         public Task<IReadOnlyList<DeviceRegistration>> GetActiveAsync(CancellationToken cancellationToken = default)
         {

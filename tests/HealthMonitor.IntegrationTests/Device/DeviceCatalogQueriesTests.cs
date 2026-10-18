@@ -125,5 +125,41 @@ public sealed class DeviceCatalogQueriesTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             queries.GetByIdsAsync(new[] { Guid.NewGuid() }, cancellation.Token));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queries.GetActiveAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queries.GetDetailAsync(Guid.NewGuid(), cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queries.GetDetailAsync(Guid.Empty, cancellation.Token));
+    }
+    [Fact]
+    public async Task GetDetailAsync_ActiveAndRetired_ProjectsExactLifecycleWithoutTracking()
+    {
+        await using var connection = await new PostgreSqlTestFixture().OpenConnectionAsync();
+        await using var context = CreateContext(connection);
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+        var active = CreateDevice();
+        var retired = CreateDevice(retired: true);
+        context.AddRange(active, retired);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var queries = new DeviceCatalogQueries(context);
+        foreach (var device in new[] { active, retired })
+        {
+            var result = await queries.GetDetailAsync(device.Id);
+            Assert.Equal(new DeviceCatalogDetail(Registration(device), device.CreatedAtUtc, device.RetiredAtUtc), result);
+        }
+        Assert.Empty(context.ChangeTracker.Entries());
+        // The enclosing transaction is never committed; only these test-owned new rows are rolled back.
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_UnknownAndEmpty_ReturnNullWithoutTracking()
+    {
+        await using var connection = await new PostgreSqlTestFixture().OpenConnectionAsync();
+        await using var context = CreateContext(connection);
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+        Guid unknown;
+        do { unknown = Guid.NewGuid(); } while (await context.Devices.AnyAsync(d => d.Id == unknown));
+        var queries = new DeviceCatalogQueries(context);
+        Assert.Null(await queries.GetDetailAsync(unknown));
+        Assert.Null(await queries.GetDetailAsync(Guid.Empty));
+        Assert.Empty(context.ChangeTracker.Entries());
     }
 }

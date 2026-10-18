@@ -6,7 +6,7 @@ namespace HealthMonitor.Infrastructure.Data.DeviceContext;
 
 /// <summary>Reads Device-owned inventory through the existing scoped Device context.</summary>
 /// <remarks>
-/// Uses no-tracking SQL projections of only registration fields. It owns no connection,
+/// Uses no-tracking SQL projections of registration fields and explicitly requested lifecycle metadata. It owns no connection,
 /// transaction, or pool and never saves changes. The caller owns the context's lifetime.
 /// No-tracking reads express the read-only contract and keep inventory composition independent
 /// of tracked entity state. Scalar projections do not materialize entities in the first place.
@@ -22,6 +22,19 @@ public sealed class DeviceCatalogQueries : IDeviceCatalogQueries
     public DeviceCatalogQueries(DeviceDbContext context)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+    }
+
+    /// <inheritdoc />
+    public async Task<DeviceCatalogDetail?> GetDetailAsync(Guid deviceId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (deviceId == Guid.Empty) return null;
+        // Explicit detail retains retirement history; fleet eligibility belongs to GetActiveAsync.
+        return await _context.Devices.AsNoTracking().Where(device => device.Id == deviceId)
+            .Select(device => new DeviceCatalogDetail(
+                new DeviceRegistration(device.Id, device.DisplayName, device.AssetTag, device.SiteCode,
+                    device.DeviceType, device.RetiredAtUtc != null), device.CreatedAtUtc, device.RetiredAtUtc))
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
     /// <inheritdoc />
