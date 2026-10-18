@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace HealthMonitor.Api.Http;
 
-/// <summary>Maps owned validation/capacity errors and sanitizes unexpected read failures before public routes are introduced.</summary>
+/// <summary>Maps owned validation/capacity errors and sanitizes failures from public read routes.</summary>
 /// <remarks>This minimum boundary precedes the remaining Step 4.3 operational/security work. No exception object/message is logged.</remarks>
 /// <param name="logger">Owned diagnostics sink; exception objects and raw messages are excluded.</param>
 internal sealed class ReadExceptionHandler(ILogger<ReadExceptionHandler> logger) : IExceptionHandler
@@ -25,7 +25,7 @@ internal sealed class ReadExceptionHandler(ILogger<ReadExceptionHandler> logger)
         {
             InvalidTelemetryRangeException => StatusCodes.Status400BadRequest,
             DeviceCatalogCapacityExceededException => StatusCodes.Status503ServiceUnavailable,
-            Npgsql.NpgsqlException database when IsUnavailable(database) => StatusCodes.Status503ServiceUnavailable,
+            _ when IsDatabaseUnavailable(exception) => StatusCodes.Status503ServiceUnavailable,
             _ => StatusCodes.Status500InternalServerError
         };
         if (status >= 500)
@@ -41,7 +41,7 @@ internal sealed class ReadExceptionHandler(ILogger<ReadExceptionHandler> logger)
         {
             InvalidTelemetryRangeException => "validation_failed",
             DeviceCatalogCapacityExceededException => "fleet_capacity_exceeded",
-            Npgsql.NpgsqlException database when IsUnavailable(database) => "database_unavailable",
+            _ when IsDatabaseUnavailable(exception) => "database_unavailable",
             _ => "unexpected_error"
         };
         problem.Extensions["traceId"] = context.TraceIdentifier;
@@ -49,6 +49,21 @@ internal sealed class ReadExceptionHandler(ILogger<ReadExceptionHandler> logger)
         await context.Response.WriteAsJsonAsync(problem, options: null, contentType: "application/problem+json", cancellationToken: cancellationToken);
         return true;
     }
+    /// <summary>Recognizes direct provider failures and the immediate wrapper emitted by Npgsql's non-retrying EF strategy.</summary>
+    /// <param name="error">Request failure; messages and arbitrary nested exception chains are not inspected.</param>
+    /// <returns>True only when the recognized provider failure indicates database unavailability.</returns>
+    /// <remarks>
+    /// The default strategy wraps transient provider exceptions in InvalidOperationException. Retain the same
+    /// narrow availability rules for that shape; a retryable transaction conflict still represents a server error here.
+    /// This classification neither retries the operation nor changes transaction ownership.
+    /// </remarks>
+    private static bool IsDatabaseUnavailable(Exception error) => error switch
+    {
+        Npgsql.NpgsqlException database => IsUnavailable(database),
+        InvalidOperationException { InnerException: Npgsql.NpgsqlException database } => IsUnavailable(database),
+        _ => false
+    };
+
     /// <summary>Separates transport/server availability from unexpected PostgreSQL query, schema, or data errors.</summary>
     /// <param name="error">Structured provider failure; raw messages are never inspected or reflected.</param>
     /// <returns>True for connection-class/server-unavailable states or transient non-PostgreSQL transport failures.</returns>

@@ -1,5 +1,8 @@
 using System.Net;
 using System.Text.Json;
+using HealthMonitor.Infrastructure.Data.DeviceContext;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using HealthMonitor.Application.Device;
@@ -254,6 +257,30 @@ public sealed class ReadApiContractTests
         {
             ports.Failure = outage;
             await ProblemAsync(host, "/api/v1/devices", HttpStatusCode.ServiceUnavailable);
+        }
+        // Use the installed provider strategy itself: fake ports alone do not reproduce EF's transient-error wrapper.
+        // The delegate fails before any query or connection open; these options supply provider services only.
+        await using var context = new DeviceDbContext(new DbContextOptionsBuilder<DeviceDbContext>()
+            .UseNpgsql("Host=127.0.0.1;Database=healthmonitor_test").Options);
+        var transport = new Npgsql.NpgsqlException(Canary, new IOException(Canary));
+        var wrapped = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            context.Database.CreateExecutionStrategy().ExecuteAsync(() => Task.FromException<int>(transport)));
+        Assert.Same(transport, wrapped.InnerException);
+        ports.Failure = wrapped;
+        await ProblemAsync(host, "/api/v1/devices", HttpStatusCode.ServiceUnavailable);
+        await ProblemAsync(host, $"/api/v1/devices/{device.DeviceId}/telemetry", HttpStatusCode.ServiceUnavailable);
+        foreach (var failure in new Exception[]
+        {
+            new InvalidOperationException(Canary, new Npgsql.PostgresException(Canary, "ERROR", "ERROR", Npgsql.PostgresErrorCodes.UndefinedTable)),
+            new InvalidOperationException(Canary, new Npgsql.PostgresException(Canary, "ERROR", "ERROR", Npgsql.PostgresErrorCodes.InvalidTextRepresentation)),
+            new InvalidOperationException(Canary, new Npgsql.PostgresException(Canary, "ERROR", "ERROR", Npgsql.PostgresErrorCodes.SerializationFailure)),
+            new InvalidOperationException(Canary, new Npgsql.NpgsqlException(Canary)),
+            new Exception(Canary, transport),
+            new InvalidOperationException(Canary, new InvalidOperationException(Canary, transport))
+        })
+        {
+            ports.Failure = failure;
+            await ProblemAsync(host, "/api/v1/devices", HttpStatusCode.InternalServerError);
         }
         var loggerFactory = host.Services.GetRequiredService<ILoggerFactory>();
         loggerFactory.CreateLogger("Microsoft.EntityFrameworkCore.Database.Command").LogError(Canary);
