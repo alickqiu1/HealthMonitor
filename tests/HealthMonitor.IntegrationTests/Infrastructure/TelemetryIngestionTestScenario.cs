@@ -95,6 +95,41 @@ internal sealed class TelemetryIngestionTestScenario : TimeProvider
         return writer;
     }
 
+    /// <summary>Refuses global retention tests if any Telemetry baseline exists; never adopts or clears existing data.</summary>
+    /// <remarks>Requires exclusive use of this disposable database by one serialized test process; it is not cross-process isolation.</remarks>
+    internal async Task RequireEmptyTelemetryAsync()
+    {
+        await using var context = Context();
+        Assert.False(await context.TelemetryPings.AnyAsync(Token), "Retention requires empty, exclusively owned Telemetry tables.");
+        Assert.False(await context.IncidentLogs.AnyAsync(Token), "Retention requires empty, exclusively owned Telemetry tables.");
+        Assert.False(await context.DeviceTelemetryStates.AnyAsync(Token), "Retention requires empty, exclusively owned Telemetry tables.");
+        Assert.False(await context.SimulationBatches.AnyAsync(Token), "Retention requires empty, exclusively owned Telemetry tables.");
+    }
+
+    /// <summary>Reserves an entire bounded seed's proven-absent receipt identities before any write can occur.</summary>
+    /// <param name="batchIds">New identities to own; duplicates and empty IDs are rejected.</param>
+    internal async Task ReserveBatchIdsAsync(Guid[] batchIds)
+    {
+        Assert.DoesNotContain(Guid.Empty, batchIds);
+        Assert.Equal(batchIds.Length, batchIds.Distinct().Count());
+        Assert.DoesNotContain(batchIds, id => _batches.Contains(id));
+        await using var context = Context();
+        Assert.False(await context.SimulationBatches.AnyAsync(batch => batchIds.Contains(batch.BatchId), Token));
+        _batches.AddRange(batchIds);
+    }
+
+    /// <summary>Registers a retention writer before returning it to a caller that might exit exceptionally.</summary>
+    /// <param name="writer">Already-started work whose completion must precede cleanup.</param>
+    /// <returns>The same task for ordinary assertions.</returns>
+    internal Task<T> TrackWriter<T>(Task<T> writer) { _writers.Add(writer); return writer; }
+
+    /// <summary>Establishes terminal writer states before context disposal; the outer fail-stop deadline prevents unsafe cleanup.</summary>
+    /// <param name="writers">Every task using the resources about to be disposed.</param>
+    internal static async Task DrainWritersAsync(params Task[] writers)
+    {
+        try { await StopIfUnresponsiveAsync(Task.WhenAll(writers), TimeSpan.FromSeconds(30)); }
+        catch { /* Expected faults are asserted by the body; completion, not success, permits owned cleanup. */ }
+    }
     internal ValueTask<NpgsqlConnection> OpenConnectionAsync() => _source.OpenConnectionAsync(Token);
 
     /// <summary>Runs a bounded scenario and cleans only reserved identities after every registered writer terminates.</summary>

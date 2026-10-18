@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -87,6 +87,23 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    Retention = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryRetentionStoreTests'
+        Methods = @{
+            EmptyBatch_NoChanges = @('')
+            CutoffEqualityRetained_OneMicrosecondOlderDeleted = @('')
+            LatestStateAndOpenIncidentPreserved_PingReferencesSetNull = @('')
+            RetainedPingProtectsExpiredReceipt = @('')
+            CombinedBudgetAcrossTables_StopsAt1000 = @('')
+            TenBatchPass_ReportsRemainingBacklog = @('')
+            ExecutedDeletionFailure_RollsBackAllStages = @('')
+            CancelledDeletion_RollsBack = @('')
+            IngestionLockContention_PreventsRetentionAndReleases = @('')
+            WaitingIngestion_ProceedsAfterRetentionCommit = @('')
+            RepeatedBatch_ReusesCleanContext = @('')
+            FailedBatch_InvalidatesContext = @('')
         }
     }
     Concurrency = @{

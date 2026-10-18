@@ -76,6 +76,22 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    Retention = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryRetentionStoreTests'
+        Cases = @(
+            'EmptyBatch_NoChanges',
+            'CutoffEqualityRetained_OneMicrosecondOlderDeleted',
+            'LatestStateAndOpenIncidentPreserved_PingReferencesSetNull',
+            'RetainedPingProtectsExpiredReceipt',
+            'CombinedBudgetAcrossTables_StopsAt1000',
+            'TenBatchPass_ReportsRemainingBacklog',
+            'ExecutedDeletionFailure_RollsBackAllStages',
+            'CancelledDeletion_RollsBack',
+            'IngestionLockContention_PreventsRetentionAndReleases',
+            'WaitingIngestion_ProceedsAfterRetentionCommit',
+            'RepeatedBatch_ReusesCleanContext',
+            'FailedBatch_InvalidatesContext')
+    }
     Concurrency = @{
         Class = 'HealthMonitor.IntegrationTests.Telemetry.TelemetryIngestionConcurrencyTests'
         Cases = @('IdenticalConcurrentRequests_CommitOnceAcrossSources',
@@ -121,7 +137,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

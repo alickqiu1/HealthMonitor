@@ -337,6 +337,24 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/ingestion-concurrency/ingestion-concurrency.trx -Group Concurrency
 
+      # Retention performs global pruning and must refuse nonempty Telemetry baselines.
+      # Run only after prior serialized groups have removed their owned test data.
+      - name: Run retention integration tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Telemetry.TelemetryRetentionStoreTests" \
+            --logger "trx;LogFileName=retention.trx" \
+            --results-directory artifacts/test-results/retention
+
+      - name: Verify retention test execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/retention/retention.trx -Group Retention
+
       - name: Upload integration test reports
         if: always()
         uses: actions/upload-artifact@v4
