@@ -86,7 +86,7 @@ $fixtures = @{
             'Telemetry_HalfOpenRangeAndPagingThroughHttp',
             'Incidents_OpenResolvedAllAndPagingThroughHttp',
             'Validation_RejectedBeforeDatabaseCommands',
-            'ProviderFailure_ReturnsSanitizedProblemThroughRealContext')
+            'Readiness_VerifiesFixtureDatabaseAndLivenessStaysIndependent', 'ProviderFailure_ReturnsSanitizedProblemThroughRealContext')
     }
     Contract = @{
         Class = 'HealthMonitor.IntegrationTests.Api.ReadApiContractTests'
@@ -99,7 +99,7 @@ $fixtures = @{
             'Incidents_AllowlistedStateAndPagingWithoutDateFilters',
             'Metrics_RemainsGlobalAndPreservesFractionalFreshMean',
             'Failures_ReturnSanitizedProblemsAndSafeLogs',
-            'Cors_AllowedOriginsReceiveExactReadHeaders', 'Cors_UntrustedAndMissingOriginsDoNotGainBrowserAccess', 'Cors_PreflightGrantsOnlyConfiguredReadMethodAndHeader', 'RequestCancellation_ReachesPortsWithoutInternalError')
+            'Cors_AllowedOriginsReceiveExactReadHeaders', 'Cors_UntrustedAndMissingOriginsDoNotGainBrowserAccess', 'Cors_PreflightGrantsOnlyConfiguredReadMethodAndHeader', 'Probes_LivenessDoesNotResolveDatabaseCheckOrPool', 'Probes_ReadinessMapsResultsFactoryFailureTimeoutAndCancellationSafely', 'RequestCancellation_ReachesPortsWithoutInternalError')
     }
     History = @{
         Class = 'HealthMonitor.IntegrationTests.Telemetry.DeviceHistoryQueriesTests'

@@ -16,7 +16,7 @@ using Microsoft.Extensions.Hosting;
 namespace HealthMonitor.IntegrationTests.Infrastructure;
 
 /// <summary>Runs the shared read feature with WebApplicationFactory/TestServer, using explicit fake ports or fixture-verified database services.</summary>
-/// <remarks>Never executes Program, loads application secrets/runtime settings, or starts workers. Not full startup, Kestrel, HTTPS, or deployment proof.</remarks>
+/// <remarks>Never executes Program, loads application secrets/runtime settings, or starts application producer/retention workers. Not full startup, Kestrel, HTTPS, or deployment proof.</remarks>
 internal sealed class ReadApiTestHost : IAsyncDisposable
 {
     private readonly FeatureFactory factory;
@@ -93,7 +93,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
         }
     }
 
-    /// <summary>Overrides factory host creation so Program, runtime credential selection, and workers cannot run.</summary>
+    /// <summary>Overrides factory host creation so Program, runtime credential selection, and application producer/retention workers cannot run.</summary>
     /// <param name="configure">Explicit read service overrides.</param>
     /// <param name="logs">Diagnostic capture after production filtering.</param>
     /// <param name="requests">Independent server-completion barriers.</param>
@@ -117,6 +117,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                 {
                     services.AddFleetReads(new ConfigurationBuilder().Build());
                     services.AddReadCors(new ConfigurationBuilder().Build());
+                    services.AddOperationalProbes();
                     configure(services);
                     services.AddReadApi();
                 })
@@ -131,7 +132,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                     });
                     app.UseReadApiErrors(); app.UseRouting();
                     app.UseCors(ReadCorsComposition.PolicyName);
-                    app.UseEndpoints(endpoints => endpoints.MapControllers());
+                    app.UseEndpoints(endpoints => { endpoints.MapControllers(); endpoints.MapOperationalProbes(); });
                 }));
     }
 }

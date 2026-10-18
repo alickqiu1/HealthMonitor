@@ -100,6 +100,7 @@ $inventories = @{
             Telemetry_HalfOpenRangeAndPagingThroughHttp = @('')
             Incidents_OpenResolvedAllAndPagingThroughHttp = @('')
             Validation_RejectedBeforeDatabaseCommands = @('')
+            Readiness_VerifiesFixtureDatabaseAndLivenessStaysIndependent = @('')
             ProviderFailure_ReturnsSanitizedProblemThroughRealContext = @('')
         }
     }
@@ -118,6 +119,8 @@ $inventories = @{
             Cors_AllowedOriginsReceiveExactReadHeaders = @('')
             Cors_UntrustedAndMissingOriginsDoNotGainBrowserAccess = @('')
             Cors_PreflightGrantsOnlyConfiguredReadMethodAndHeader = @('')
+            Probes_LivenessDoesNotResolveDatabaseCheckOrPool = @('')
+            Probes_ReadinessMapsResultsFactoryFailureTimeoutAndCancellationSafely = @('')
             RequestCancellation_ReachesPortsWithoutInternalError = @('')
         }
     }

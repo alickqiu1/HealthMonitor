@@ -4,7 +4,7 @@ using HealthMonitor.IntegrationTests.Infrastructure;
 
 namespace HealthMonitor.IntegrationTests.Api;
 
-/// <summary>Seven real HTTP/Device/Telemetry cases on the verified disposable database; no local execution is implied by compilation.</summary>
+/// <summary>Eight real HTTP/Device/Telemetry/probe cases on the verified disposable database; no local execution is implied by compilation.</summary>
 /// <remarks>Feature-only factory; sequential externally owned Device rollback transaction, independent Telemetry query scopes, no full Program/workers/HTTPS proof.</remarks>
 [Collection(TelemetryIngestionDatabaseCollection.Name)]
 public sealed class ReadApiDatabaseTests
@@ -148,6 +148,16 @@ public sealed class ReadApiDatabaseTests
         Assert.Equal(0, test.Probe.Count);
     });
 
+    [Fact]
+    public Task Readiness_VerifiesFixtureDatabaseAndLivenessStaysIndependent() => ReadApiDatabaseScenario.RunAsync(async test =>
+    {
+        using var live = await GetAsync(test, "/health/live");
+        Assert.Equal("alive", live.RootElement.GetProperty("status").GetString());
+        using var ready = await GetAsync(test, "/health/ready");
+        Assert.Equal("ready", ready.RootElement.GetProperty("status").GetString());
+        // The registered production check uses SELECT 1 on the same independently fixture-verified pool.
+        // This is connectivity proof only, not schema/role/TLS/deployment verification.
+    });
     [Fact]
     public Task ProviderFailure_ReturnsSanitizedProblemThroughRealContext() => ReadApiDatabaseScenario.RunAsync(async test =>
     {

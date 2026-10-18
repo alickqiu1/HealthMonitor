@@ -86,6 +86,7 @@ builder.Services.AddTelemetryRetention();
 
 builder.Services.AddReadApi();
 builder.Services.AddReadCors(builder.Configuration);
+builder.Services.AddOperationalProbes();
 
 // Register native ASP.NET Core OpenAPI document generation.
 builder.Services.AddOpenApi();
@@ -109,5 +110,6 @@ app.UseRouting();
 app.UseCors(ReadCorsComposition.PolicyName);
 app.UseAuthorization();
 app.MapControllers();
+app.MapOperationalProbes();
 
 app.Run();

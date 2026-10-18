@@ -2,6 +2,8 @@ using System.Net;
 using System.Text.Json;
 using HealthMonitor.Api.Composition;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using HealthMonitor.Infrastructure.Data.DeviceContext;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -15,7 +17,7 @@ using HealthMonitor.IntegrationTests.Infrastructure;
 namespace HealthMonitor.IntegrationTests.Api;
 
 /// <summary>Database-free HTTP integration through the shared production read pipeline and explicit fake application ports.</summary>
-/// <remarks>These thirteen cases prove transport/composition, not PostgreSQL, full Program startup, HTTPS, workers, or deployment.</remarks>
+/// <remarks>These fifteen cases prove transport/composition, not PostgreSQL, full Program startup, HTTPS, workers, or deployment.</remarks>
 public sealed class ReadApiContractTests
 {
     private const string Canary = "credential-canary-42";
@@ -287,6 +289,7 @@ public sealed class ReadApiContractTests
         var loggerFactory = host.Services.GetRequiredService<ILoggerFactory>();
         loggerFactory.CreateLogger("Microsoft.EntityFrameworkCore.Database.Command").LogError(Canary);
         loggerFactory.CreateLogger("Npgsql.Command").LogError(Canary);
+        loggerFactory.CreateLogger("Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService").LogError(Canary);
         loggerFactory.CreateLogger("HealthMonitor.ContractProbe").LogWarning("Owned operational marker");
         ports.Failure = new DeviceCatalogCapacityExceededException();
         await ProblemAsync(host, "/api/v1/metrics/summary", HttpStatusCode.ServiceUnavailable);
@@ -386,6 +389,120 @@ public sealed class ReadApiContractTests
                 Assert.True(Allows(response, "Vary", "Origin"));
             }
         }
+    }
+    /// <summary>Overrides only the built-in check registration; a pool resolution would fail, proving local probe HTTP cases are database-free.</summary>
+    /// <param name="factory">Controlled check or registration-factory failure.</param>
+    /// <param name="serviceFailure">Whether construction of the framework service fails before a check can run.</param>
+    /// <param name="missingRegistration">Whether the required database check is absent, producing an empty filtered report.</param>
+    /// <returns>Feature host with the production probe routes, framework timeout, and conflicting broad logging rule.</returns>
+    private static async Task<ReadApiTestHost> ProbeHostAsync(Func<IServiceProvider, IHealthCheck> factory, bool serviceFailure = false, bool missingRegistration = false)
+    {
+        bool armed = false;
+        var host = await ReadApiTestHost.StartAsync(services =>
+        {
+            services.AddSingleton<Npgsql.NpgsqlDataSource>(_ => throw new InvalidOperationException(Canary));
+            if (serviceFailure)
+            {
+                // The publisher host also resolves this service during startup. Arm a test-only transient
+                // factory failure afterward so the assertion specifically exercises the endpoint's guarded resolution.
+                var originalService = services.Last(item => item.ServiceType == typeof(HealthCheckService));
+                services.AddTransient<HealthCheckService>(provider => armed
+                    ? throw new InvalidOperationException(Canary)
+                    : (HealthCheckService)(originalService.ImplementationFactory?.Invoke(provider)
+                        ?? ActivatorUtilities.CreateInstance(provider, originalService.ImplementationType!)));
+            }
+            services.PostConfigure<HealthCheckServiceOptions>(options =>
+            {
+                var original = options.Registrations.Single(check => check.Name == HealthProbeComposition.DatabaseCheckName);
+                options.Registrations.Remove(original);
+                if (!missingRegistration)
+                    options.Registrations.Add(new HealthCheckRegistration(original.Name, factory, original.FailureStatus, original.Tags, original.Timeout));
+            });
+        }, providerSpecificBroadRule: true);
+        armed = true;
+        return host;
+    }
+
+    /// <summary>Adapts controlled async behavior to the standard health-check interface; no project-specific probe port is introduced.</summary>
+    /// <param name="run">Healthy, failing, or cancellation-aware fake check behavior.</param>
+    private sealed class ControlledHealthCheck(Func<CancellationToken, Task<HealthCheckResult>> run) : IHealthCheck
+    {
+        /// <inheritdoc />
+        public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default) => run(cancellationToken);
+    }
+
+    [Fact]
+    public async Task Probes_LivenessDoesNotResolveDatabaseCheckOrPool()
+    {
+        int factories = 0;
+        await using var host = await ProbeHostAsync(_ => { factories++; throw new InvalidOperationException(Canary); });
+        using var response = await host.Client.GetAsync("/health/live");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode); Assert.True(response.Headers.CacheControl?.NoStore);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Fields(json.RootElement, "status"); Assert.Equal("alive", json.RootElement.GetProperty("status").GetString());
+        Assert.Equal(0, factories);
+        Assert.Empty(host.Services.GetServices<IHealthCheckPublisher>());
+        Assert.All(host.Logs.Entries, entry => Assert.DoesNotContain(Canary, entry));
+    }
+
+    [Fact]
+    public async Task Probes_ReadinessMapsResultsFactoryFailureTimeoutAndCancellationSafely()
+    {
+        foreach (var mode in new[] { "healthy", "unhealthy", "checkFailure", "factoryFailure", "serviceFailure", "missingRegistration", "timeout" })
+        {
+            bool timeoutCanceled = false;
+            await using var host = await ProbeHostAsync(_ => mode == "factoryFailure"
+                ? throw new InvalidOperationException(Canary)
+                : new ControlledHealthCheck(async token =>
+                {
+                    if (mode == "timeout")
+                    {
+                        try { await Task.Delay(Timeout.InfiniteTimeSpan, token); }
+                        catch (OperationCanceledException) { timeoutCanceled = true; throw; }
+                    }
+                    if (mode == "checkFailure") throw new InvalidOperationException(Canary);
+                    return mode == "healthy" ? HealthCheckResult.Healthy()
+                        : HealthCheckResult.Unhealthy(Canary, new InvalidOperationException(Canary));
+                }), serviceFailure: mode == "serviceFailure", missingRegistration: mode == "missingRegistration");
+            var registrations = host.Services.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations;
+            if (mode == "missingRegistration") Assert.Empty(registrations);
+            else Assert.Equal(TimeSpan.FromSeconds(5), Assert.Single(registrations).Timeout);
+            using var response = await host.Client.GetAsync("/health/ready");
+            Assert.True(response.Headers.CacheControl?.NoStore);
+            var text = await response.Content.ReadAsStringAsync(); Assert.DoesNotContain(Canary, text);
+            using var json = JsonDocument.Parse(text);
+            if (mode == "healthy")
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode); Fields(json.RootElement, "status");
+                Assert.Equal("ready", json.RootElement.GetProperty("status").GetString());
+            }
+            else
+            {
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+                Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+                Assert.Equal("database_unavailable", json.RootElement.GetProperty("code").GetString());
+                Assert.False(string.IsNullOrWhiteSpace(json.RootElement.GetProperty("traceId").GetString()));
+                Assert.Contains(host.Logs.Entries, entry => entry.Contains("Readiness unavailable.", StringComparison.Ordinal));
+            }
+            if (mode == "timeout") Assert.True(timeoutCanceled);
+            Assert.All(host.Logs.Entries, entry => Assert.DoesNotContain(Canary, entry));
+        }
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var canceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var cancellationHost = await ProbeHostAsync(_ => new ControlledHealthCheck(async token =>
+        {
+            entered.TrySetResult();
+            try { await Task.Delay(Timeout.InfiniteTimeSpan, token); }
+            catch (OperationCanceledException) { canceled.TrySetResult(); throw; }
+            return HealthCheckResult.Healthy();
+        }));
+        using var abort = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var request = cancellationHost.Client.GetAsync("/health/ready", abort.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); abort.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
+        await canceled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.All(cancellationHost.Logs.Entries, entry => Assert.DoesNotContain(Canary, entry));
     }
     [Fact]
     public async Task RequestCancellation_ReachesPortsWithoutInternalError()

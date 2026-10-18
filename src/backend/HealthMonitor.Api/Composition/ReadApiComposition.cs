@@ -30,7 +30,7 @@ internal static class ReadApiComposition
         // Keep owned type/trace diagnostics instead. Post-configuration prevents a more-specific provider rule from bypassing this boundary.
         services.PostConfigure<LoggerFilterOptions>(options =>
         {
-            string[] blocked = { "Microsoft.EntityFrameworkCore", "Npgsql" };
+            string[] blocked = { "Microsoft.EntityFrameworkCore", "Npgsql", "Microsoft.Extensions.Diagnostics.HealthChecks" };
             // Provider specificity outranks category specificity. Mirror every configured provider name as well as neutral rules.
             var providers = options.Rules.Select(rule => rule.ProviderName).Prepend(null).Distinct(StringComparer.Ordinal).ToArray();
             for (int index = options.Rules.Count - 1; index >= 0; index--)

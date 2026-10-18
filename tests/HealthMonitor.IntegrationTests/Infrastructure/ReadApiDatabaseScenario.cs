@@ -87,6 +87,8 @@ internal sealed class ReadApiDatabaseScenario
                 await test.TrackWriter(scenario.SeedTelemetryAsync(retireSecond));
                 scenario.Host = await ReadApiTestHost.StartAsync(services =>
                 {
+                    // Instance registration borrows the fixture-owned pool; the host must not become its disposal owner.
+                    services.AddSingleton(source);
                     services.AddScoped(provider =>
                     {
                         var context = new DeviceDbContext(new DbContextOptionsBuilder<DeviceDbContext>()
