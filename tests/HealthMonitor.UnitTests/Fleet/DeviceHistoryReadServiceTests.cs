@@ -71,8 +71,8 @@ public sealed class DeviceHistoryReadServiceTests
     public async Task InvalidRangeAndState_RejectBeforeCatalog()
     {
         var fake = new Ports();
-        await Assert.ThrowsAsync<ArgumentException>(() => Service(fake).ReadTelemetryAsync(fake.Id, fromUtc: Now, toUtc: Now));
-        await Assert.ThrowsAsync<ArgumentException>(() => Service(fake).ReadTelemetryAsync(fake.Id, fromUtc: Now.AddDays(-8), toUtc: Now));
+        await Assert.ThrowsAsync<HealthMonitor.Api.Http.InvalidTelemetryRangeException>(() => Service(fake).ReadTelemetryAsync(fake.Id, fromUtc: Now, toUtc: Now));
+        await Assert.ThrowsAsync<HealthMonitor.Api.Http.InvalidTelemetryRangeException>(() => Service(fake).ReadTelemetryAsync(fake.Id, fromUtc: Now.AddDays(-8), toUtc: Now));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Service(fake).ReadIncidentsAsync(fake.Id, state: (IncidentHistoryState)99));
         Assert.Equal(0, fake.CatalogReads);
     }

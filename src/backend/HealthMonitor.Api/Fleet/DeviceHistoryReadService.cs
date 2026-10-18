@@ -1,3 +1,4 @@
+using HealthMonitor.Api.Http;
 using HealthMonitor.Application.Device;
 using HealthMonitor.Application.IntegrationContracts;
 using HealthMonitor.Application.Telemetry;
@@ -5,8 +6,8 @@ using HealthMonitor.Application.Telemetry;
 namespace HealthMonitor.Api.Fleet;
 
 /// <summary>Validates drawer inputs and establishes catalog existence before querying independent Telemetry history.</summary>
-/// <remarks>Known retired devices remain readable. Each call captures one evaluation instant, not cross-module snapshot isolation.</remarks>
-internal sealed class DeviceHistoryReadService
+/// <remarks>Concrete type visibility supports normal MVC constructor injection; read projections remain internal. Known retired devices remain readable. Each call captures one evaluation instant, not cross-module snapshot isolation.</remarks>
+public sealed class DeviceHistoryReadService
 {
     private readonly IDeviceCatalogQueries catalog;
     private readonly IDeviceHistoryQueries history;
@@ -32,7 +33,8 @@ internal sealed class DeviceHistoryReadService
     /// <param name="toUtc">Exclusive UTC end; defaults to captured asOfUtc.</param>
     /// <param name="cancellationToken">Cancellation before validation and across both module reads.</param>
     /// <returns>Page/evaluation instant, or null for unknown inventory.</returns>
-    /// <exception cref="ArgumentException">Paging or range is invalid, before any catalog read.</exception>
+    /// <exception cref="ArgumentException">Paging or server clock is invalid, before any catalog read.</exception>
+    /// <exception cref="InvalidTelemetryRangeException">Caller endpoints violate the half-open UTC range contract.</exception>
     /// <exception cref="InvalidOperationException">A port returns another device's facts or an invalid page.</exception>
     /// <exception cref="OperationCanceledException">Cancellation was requested.</exception>
     internal async Task<DeviceHistorySnapshot<TelemetryHistoryItem>?> ReadTelemetryAsync(Guid deviceId, int page = 1,
@@ -41,7 +43,11 @@ internal sealed class DeviceHistoryReadService
         cancellationToken.ThrowIfCancellationRequested();
         var paging = new HistoryPaging(page, pageSize);
         var asOfUtc = clock.GetUtcNow();
-        var range = TelemetryHistoryRange.ForRequest(asOfUtc, fromUtc, toUtc);
+        if (asOfUtc == default || asOfUtc.Offset != TimeSpan.Zero)
+            throw new ArgumentException("A valid UTC clock is required.", nameof(asOfUtc));
+        TelemetryHistoryRange range;
+        try { range = TelemetryHistoryRange.ForRequest(asOfUtc, fromUtc, toUtc); }
+        catch (ArgumentException error) { throw new InvalidTelemetryRangeException(error); }
         if (!await KnownAsync(deviceId, cancellationToken)) return null;
         var result = await history.GetTelemetryAsync(deviceId, paging, range, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();

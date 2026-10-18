@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -89,6 +89,21 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    Contract = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.ReadApiContractTests'
+        Methods = @{
+            Grid_DefaultsSerializeExactV1ShapeAndNullMeasurements = @('')
+            Grid_FilterSortPageUsesGlobalSnapshotAndStableTies = @('')
+            QueryAllowlist_RejectsUnknownDuplicateCaseVariantsAndBlankTokens = @('')
+            BindingErrors_MalformedGuidPagingAndDatesAreSanitized = @('')
+            Detail_KnownRetiredAndUnknownFollowReadContracts = @('')
+            Telemetry_DefaultPartialRangesAndBoundsUseOneClock = @('')
+            Incidents_AllowlistedStateAndPagingWithoutDateFilters = @('')
+            Metrics_RemainsGlobalAndPreservesFractionalFreshMean = @('')
+            Failures_ReturnSanitizedProblemsAndSafeLogs = @('')
+            RequestCancellation_ReachesPortsWithoutInternalError = @('')
         }
     }
     History = @{

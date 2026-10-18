@@ -133,6 +133,23 @@ jobs:
       #
       # This ensures contributors and CI use the same
       # EF Core tooling version without global installation.
+      # Database-free HTTP feature tests use explicit fake ports and never start Program or database workers.
+      - name: Run database-free read API contract tests
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Api.ReadApiContractTests" \
+            --logger "trx;LogFileName=read-contract.trx" \
+            --results-directory artifacts/test-results/read-contract
+
+      - name: Verify database-free read API contract execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/read-contract/read-contract.trx -Group Contract
+
       - name: Restore .NET tools
         run: dotnet tool restore
 

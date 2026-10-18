@@ -6,8 +6,8 @@ using HealthMonitor.Domain.Telemetry;
 namespace HealthMonitor.Api.Fleet;
 
 /// <summary>Composes bounded active fleet through application ports without cross-module joins.</summary>
-/// <remarks>Use sequentially within a scope. No writes, HTTP binding, sorting policy, or pagination occur here.</remarks>
-internal sealed class FleetReadService
+/// <remarks>Concrete type visibility supports normal MVC constructor injection; read projections remain internal. Use sequentially within a scope. No writes, HTTP binding, sorting policy, or pagination occur here.</remarks>
+public sealed class FleetReadService
 {
     private readonly IDeviceCatalogQueries catalog;
     private readonly IDeviceHealthQueries telemetry;
@@ -32,7 +32,7 @@ internal sealed class FleetReadService
     /// <exception cref="InvalidOperationException">A port violates its identity, uniqueness, or active-only contract.</exception>
     /// <exception cref="ArgumentException">The clock or observation violates the Domain health contract.</exception>
     /// <exception cref="OperationCanceledException">Cancellation was requested.</exception>
-    /// <remarks>Provider failures propagate. Only missing states mean Unknown. Reads may see commits after asOfUtc;
+    /// <remarks>Concrete type visibility supports normal MVC constructor injection; read projections remain internal. Provider failures propagate. Only missing states mean Unknown. Reads may see commits after asOfUtc;
     /// the captured instant does not promise a historical or cross-module serializable snapshot.</remarks>
     internal async Task<FleetSnapshot> ReadAsync(CancellationToken cancellationToken = default)
     {

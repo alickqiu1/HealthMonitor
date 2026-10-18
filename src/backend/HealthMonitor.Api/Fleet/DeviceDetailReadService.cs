@@ -5,8 +5,8 @@ using HealthMonitor.Domain.Telemetry;
 namespace HealthMonitor.Api.Fleet;
 
 /// <summary>Composes one known device through separate module ports, retaining retired inventory for historical reads.</summary>
-/// <remarks>Use sequentially within a scope. Retirement does not determine computed health or suppress historical facts.</remarks>
-internal sealed class DeviceDetailReadService
+/// <remarks>Concrete type visibility supports normal MVC constructor injection; read projections remain internal. Use sequentially within a scope. Retirement does not determine computed health or suppress historical facts.</remarks>
+public sealed class DeviceDetailReadService
 {
     private readonly IDeviceCatalogQueries catalog;
     private readonly IDeviceHealthQueries telemetry;
@@ -31,7 +31,7 @@ internal sealed class DeviceDetailReadService
     /// <exception cref="InvalidOperationException">A port returns mismatched, duplicate, or inconsistent facts.</exception>
     /// <exception cref="ArgumentException">Clock or observation violates the Domain health contract.</exception>
     /// <exception cref="OperationCanceledException">Cancellation was requested.</exception>
-    /// <remarks>Provider failures propagate. Missing telemetry means Unknown, never an invented measurement.
+    /// <remarks>Concrete type visibility supports normal MVC constructor injection; read projections remain internal. Provider failures propagate. Missing telemetry means Unknown, never an invented measurement.
     /// Separate module reads can observe later commits; asOfUtc is an evaluation instant, not historical isolation.</remarks>
     internal async Task<DeviceDetailSnapshot?> ReadAsync(Guid deviceId, CancellationToken cancellationToken = default)
     {

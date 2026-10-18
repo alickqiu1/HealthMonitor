@@ -84,7 +84,7 @@ builder.Services.AddTelemetryIngestion();
 builder.Services.AddDemoProducer(builder.Configuration);
 builder.Services.AddTelemetryRetention();
 
-builder.Services.AddControllers();
+builder.Services.AddReadApi();
 
 // Register native ASP.NET Core OpenAPI document generation.
 builder.Services.AddOpenApi();
@@ -101,6 +101,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseReadApiErrors();
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();

@@ -78,6 +78,19 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    Contract = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.ReadApiContractTests'
+        Cases = @('Grid_DefaultsSerializeExactV1ShapeAndNullMeasurements',
+            'Grid_FilterSortPageUsesGlobalSnapshotAndStableTies',
+            'QueryAllowlist_RejectsUnknownDuplicateCaseVariantsAndBlankTokens',
+            'BindingErrors_MalformedGuidPagingAndDatesAreSanitized',
+            'Detail_KnownRetiredAndUnknownFollowReadContracts',
+            'Telemetry_DefaultPartialRangesAndBoundsUseOneClock',
+            'Incidents_AllowlistedStateAndPagingWithoutDateFilters',
+            'Metrics_RemainsGlobalAndPreservesFractionalFreshMean',
+            'Failures_ReturnSanitizedProblemsAndSafeLogs',
+            'RequestCancellation_ReachesPortsWithoutInternalError')
+    }
     History = @{
         Class = 'HealthMonitor.IntegrationTests.Telemetry.DeviceHistoryQueriesTests'
         Cases = @('TelemetryRange_ProjectsHalfOpenBoundsAndSelectedDeviceUntracked',
@@ -159,7 +172,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {
