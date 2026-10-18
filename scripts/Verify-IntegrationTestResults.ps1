@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -89,6 +89,21 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    SimulationContract = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.SimulationApiContractTests'
+        Methods = @{
+            DefaultDisabled_RouteAbsent = @('')
+            LocalAccess_AllEffectiveBindingAndIpGates = @('')
+            CommitAndSameIdReplay_WireWaitsForService = @('')
+            InvalidShapes_RejectBeforeIngestion = @('')
+            BodyLimit_ExactAndKnownOrChunkedOverflow = @('')
+            RateLimit_FiveThen429_DenialsDoNotConsumeQuota = @('')
+            OwnedErrors_SanitizedStableStatuses = @('')
+            CancellationAndUnexpectedFailures_NotValidation = @('')
+            Cors_PostPolicySeparateFromPublicReads = @('')
+            UnsupportedContentTypeAndUnknownQuery_RejectBeforeIngestion = @('')
         }
     }
     ReadApi = @{

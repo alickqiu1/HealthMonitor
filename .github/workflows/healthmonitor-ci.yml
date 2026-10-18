@@ -150,6 +150,22 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/read-contract/read-contract.trx -Group Contract
 
+      - name: Run database-free simulation API contract tests
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Api.SimulationApiContractTests" \
+            --logger "trx;LogFileName=simulation-contract.trx" \
+            --results-directory artifacts/test-results/simulation-contract
+
+      - name: Verify database-free simulation API contract execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/simulation-contract/simulation-contract.trx -Group SimulationContract
+
       - name: Restore .NET tools
         run: dotnet tool restore
 

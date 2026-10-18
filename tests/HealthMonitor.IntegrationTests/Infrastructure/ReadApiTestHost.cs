@@ -29,10 +29,10 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
     internal IServiceProvider Services => factory.Services;
 
     /// <summary>Starts the explicit feature WebHost without invoking the API entrypoint.</summary>
-    private ReadApiTestHost(Action<IServiceCollection> configure, bool providerSpecificBroadRule)
+    private ReadApiTestHost(Action<IServiceCollection> configure, bool providerSpecificBroadRule, IConfiguration simulationConfiguration, string environmentName)
     {
         Logs = new SafeReadLogs(); requests = new RequestCompletion();
-        factory = new FeatureFactory(configure, Logs, requests, providerSpecificBroadRule);
+        factory = new FeatureFactory(configure, Logs, requests, providerSpecificBroadRule, simulationConfiguration, environmentName);
         try
         {
             Client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
@@ -54,9 +54,13 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
     /// <summary>Builds only the shared read feature with explicit services, never application database configuration.</summary>
     /// <param name="configure">Fake services or contexts on an independently fixture-verified disposable source.</param>
     /// <param name="providerSpecificBroadRule">Whether a diagnostic test deliberately injects a broad conflicting rule.</param>
+    /// <param name="simulationConfiguration">Explicit nonsecret simulator/CORS settings only; omission keeps simulation disabled.</param>
+    /// <param name="environmentName">Explicit test environment, never read from application settings or secrets.</param>
     /// <returns>Started caller-owned host; external sources/connections/transactions remain caller-owned.</returns>
-    internal static Task<ReadApiTestHost> StartAsync(Action<IServiceCollection> configure, bool providerSpecificBroadRule = false) =>
-        Task.FromResult(new ReadApiTestHost(configure, providerSpecificBroadRule));
+    internal static Task<ReadApiTestHost> StartAsync(Action<IServiceCollection> configure, bool providerSpecificBroadRule = false,
+        IConfiguration? simulationConfiguration = null, string environmentName = "Testing") =>
+        Task.FromResult(new ReadApiTestHost(configure, providerSpecificBroadRule,
+            simulationConfiguration ?? new ConfigurationBuilder().Build(), environmentName));
 
     /// <summary>Stops client admission, independently drains server execution, then stops/disposes the factory before external database cleanup.</summary>
     /// <remarks>Client cancellation alone is not proof that a query stopped. Unresponsive server execution triggers the existing fail-stop deadline.</remarks>
@@ -98,13 +102,16 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
     /// <param name="logs">Diagnostic capture after production filtering.</param>
     /// <param name="requests">Independent server-completion barriers.</param>
     /// <param name="broadRule">Whether the logger-rule regression condition is enabled.</param>
-    private sealed class FeatureFactory(Action<IServiceCollection> configure, SafeReadLogs logs, RequestCompletion requests, bool broadRule)
+    /// <param name="simulationConfiguration">Explicit nonsecret test flags and origins.</param>
+    /// <param name="environmentName">Explicit test environment used by both host builders.</param>
+    private sealed class FeatureFactory(Action<IServiceCollection> configure, SafeReadLogs logs, RequestCompletion requests, bool broadRule,
+        IConfiguration simulationConfiguration, string environmentName)
         : WebApplicationFactory<global::Program>
     {
         /// <inheritdoc />
         protected override IHostBuilder CreateHostBuilder() => new HostBuilder()
-            .UseEnvironment("Testing")
-            .ConfigureWebHost(web => web.UseEnvironment("Testing")
+            .UseEnvironment(environmentName)
+            .ConfigureWebHost(web => web.UseEnvironment(environmentName)
                 .ConfigureAppConfiguration((_, configuration) => configuration.Sources.Clear())
                 .ConfigureLogging(logging =>
                 {
@@ -116,10 +123,11 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                 .ConfigureServices(services =>
                 {
                     services.AddFleetReads(new ConfigurationBuilder().Build());
-                    services.AddReadCors(new ConfigurationBuilder().Build());
+                    services.AddReadCors(simulationConfiguration);
                     services.AddOperationalProbes();
                     configure(services);
                     services.AddReadApi();
+                    services.AddSimulationApi(simulationConfiguration, environmentName);
                 })
                 .Configure(app =>
                 {
@@ -132,6 +140,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                     });
                     app.UseReadApiErrors(); app.UseRouting();
                     app.UseCors(ReadCorsComposition.PolicyName);
+                    app.UseLocalSimulationAccess(); app.UseRateLimiter();
                     app.UseEndpoints(endpoints => { endpoints.MapControllers(); endpoints.MapOperationalProbes(); });
                 }));
     }
