@@ -371,6 +371,23 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/health-queries/health-queries.trx -Group HealthQueries
 
+      # History count/page snapshots execute sequentially on the same verified disposable target.
+      - name: Run device history integration tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Telemetry.DeviceHistoryQueriesTests" \
+            --logger "trx;LogFileName=history.trx" \
+            --results-directory artifacts/test-results/history
+
+      - name: Verify device history test execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/history/history.trx -Group History
+
       - name: Upload integration test reports
         if: always()
         uses: actions/upload-artifact@v4

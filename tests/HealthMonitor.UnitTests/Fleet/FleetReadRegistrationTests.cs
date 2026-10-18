@@ -71,6 +71,8 @@ public sealed class FleetReadRegistrationTests
         var queries = first.ServiceProvider.GetRequiredService<IDeviceHealthQueries>();
         var reader = first.ServiceProvider.GetRequiredService<FleetReadService>();
         var detail = first.ServiceProvider.GetRequiredService<DeviceDetailReadService>();
+        var history = first.ServiceProvider.GetRequiredService<DeviceHistoryReadService>();
+        var historyQueries = first.ServiceProvider.GetRequiredService<IDeviceHistoryQueries>();
         Assert.IsType<DeviceHealthQueries>(queries);
         Assert.Same(queries, first.ServiceProvider.GetRequiredService<IDeviceHealthQueries>());
         Assert.NotSame(queries, second.ServiceProvider.GetRequiredService<IDeviceHealthQueries>());
@@ -78,11 +80,16 @@ public sealed class FleetReadRegistrationTests
         Assert.NotSame(reader, second.ServiceProvider.GetRequiredService<FleetReadService>());
         Assert.Same(detail, first.ServiceProvider.GetRequiredService<DeviceDetailReadService>());
         Assert.NotSame(detail, second.ServiceProvider.GetRequiredService<DeviceDetailReadService>());
+        Assert.Same(history, first.ServiceProvider.GetRequiredService<DeviceHistoryReadService>());
+        Assert.NotSame(history, second.ServiceProvider.GetRequiredService<DeviceHistoryReadService>());
+        Assert.IsType<DeviceHistoryQueries>(historyQueries);
+        Assert.Same(historyQueries, first.ServiceProvider.GetRequiredService<IDeviceHistoryQueries>());
+        Assert.NotSame(historyQueries, second.ServiceProvider.GetRequiredService<IDeviceHistoryQueries>());
         Assert.Same(clock, first.ServiceProvider.GetRequiredService<TimeProvider>());
         Assert.Single(services, d => d.ServiceType == typeof(TimeProvider));
         Assert.Single(services, d => d.ServiceType == typeof(DeviceDbContext));
         Assert.Single(services, d => d.ServiceType == typeof(TelemetryDbContext));
-        Assert.All(services.Where(d => d.ServiceType == typeof(IDeviceHealthQueries) || d.ServiceType == typeof(FleetReadService) || d.ServiceType == typeof(DeviceDetailReadService)),
+        Assert.All(services.Where(d => d.ServiceType == typeof(IDeviceHealthQueries) || d.ServiceType == typeof(FleetReadService) || d.ServiceType == typeof(DeviceDetailReadService) || d.ServiceType == typeof(DeviceHistoryReadService) || d.ServiceType == typeof(IDeviceHistoryQueries)),
             d => Assert.Equal(ServiceLifetime.Scoped, d.Lifetime));
     }
 

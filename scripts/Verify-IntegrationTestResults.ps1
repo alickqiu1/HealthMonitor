@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -89,6 +89,20 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    History = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.DeviceHistoryQueriesTests'
+        Methods = @{
+            TelemetryRange_ProjectsHalfOpenBoundsAndSelectedDeviceUntracked = @('')
+            TelemetryPages_OrderTimestampUuidAndPreserveTrueCount = @('')
+            HugeOffset_UsesInt64ParameterAndReturnsTrueCount = @('')
+            TelemetryCountAndPage_PreserveSnapshotDuringConcurrentInsert = @('')
+            IncidentPages_FilterStateAndOrderTimestampUuid = @('')
+            IncidentCountAndPage_PreserveOpenMembershipDuringConcurrentResolution = @('')
+            CancellationAfterCount_PropagatesAndDisposesTransaction = @('')
+            OriginalReadFailure_SurvivesTransactionCleanupFailure = @('')
+            ExistingTransaction_IsRejectedWithoutChangingCallerWork = @('')
         }
     }
     HealthQueries = @{

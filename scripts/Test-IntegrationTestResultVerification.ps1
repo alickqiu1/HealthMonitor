@@ -78,6 +78,18 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    History = @{
+        Class = 'HealthMonitor.IntegrationTests.Telemetry.DeviceHistoryQueriesTests'
+        Cases = @('TelemetryRange_ProjectsHalfOpenBoundsAndSelectedDeviceUntracked',
+            'TelemetryPages_OrderTimestampUuidAndPreserveTrueCount',
+            'HugeOffset_UsesInt64ParameterAndReturnsTrueCount',
+            'TelemetryCountAndPage_PreserveSnapshotDuringConcurrentInsert',
+            'IncidentPages_FilterStateAndOrderTimestampUuid',
+            'IncidentCountAndPage_PreserveOpenMembershipDuringConcurrentResolution',
+            'CancellationAfterCount_PropagatesAndDisposesTransaction',
+            'OriginalReadFailure_SurvivesTransactionCleanupFailure',
+            'ExistingTransaction_IsRejectedWithoutChangingCallerWork')
+    }
     HealthQueries = @{
         Class = 'HealthMonitor.IntegrationTests.Telemetry.DeviceHealthQueriesTests'
         Cases = @(
@@ -147,7 +159,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

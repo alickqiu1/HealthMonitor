@@ -6,10 +6,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HealthMonitor.Api.Composition;
 
-/// <summary>Registers fleet reads and validates fixed Edition 1.5 Monitoring rules without database access.</summary>
+/// <summary>Registers fleet/detail/history reads and validates fixed Edition 1.5 Monitoring rules without database access.</summary>
 internal static class FleetReadServiceCollectionExtensions
 {
-    /// <summary>Checks fixed monitoring values and adds scoped latest-state, fleet, and detail readers.</summary>
+    /// <summary>Checks fixed monitoring values and adds scoped latest-state, fleet, detail, and history readers.</summary>
     /// <param name="services">Services with Device queries and TelemetryDbContext registered separately.</param>
     /// <param name="configuration">Nonsecret settings; absent values use canonical Domain constants.</param>
     /// <returns>The same collection.</returns>
@@ -31,6 +31,8 @@ internal static class FleetReadServiceCollectionExtensions
         services.AddScoped<IDeviceHealthQueries, DeviceHealthQueries>();
         services.AddScoped<FleetReadService>();
         services.AddScoped<DeviceDetailReadService>();
+        services.AddScoped<IDeviceHistoryQueries, DeviceHistoryQueries>();
+        services.AddScoped<DeviceHistoryReadService>();
         return services;
     }
 
