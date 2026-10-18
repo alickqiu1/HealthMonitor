@@ -183,6 +183,23 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/simulation-host/simulation-host.trx -Group SimulationHost
 
+      # Fake-provider AI HTTP contracts activate only the controller in an isolated host; production stays disabled.
+      - name: Run database-free AI query HTTP contract tests
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Api.AiQueryContractTests" \
+            --logger "trx;LogFileName=ai-contract.trx" \
+            --results-directory artifacts/test-results/ai-contract
+
+      - name: Verify AI query HTTP contract execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/ai-contract/ai-contract.trx -Group AiContract
+
       - name: Restore .NET tools
         run: dotnet tool restore
 

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.ExceptionServices;
 using HealthMonitor.Api.Composition;
+using HealthMonitor.Api.Controllers;
 using HealthMonitor.Application.Device;
 using HealthMonitor.Application.Telemetry;
 using Microsoft.AspNetCore.Builder;
@@ -10,6 +11,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -111,6 +114,8 @@ internal sealed class KestrelSimulationTestScenario
                     services.AddSingleton<ITelemetryIngestionService>(Ingestion);
                     services.AddReadApi(); services.AddReadCors(config); services.AddOperationalProbes();
                     services.AddSimulationApi(config, "Development");
+                    // Shared controller discovery must retain the same disabled AI gate as production.
+                    services.AddAiQueryApi(config);
                 })
                 .Configure(app =>
                 {
@@ -133,6 +138,8 @@ internal sealed class KestrelSimulationTestScenario
         host = builder.Build();
         applicationStopped = host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopped;
         PublisherCount = host.Services.GetServices<IHealthCheckPublisher>().Count();
+        var actions = host.Services.GetRequiredService<IActionDescriptorCollectionProvider>().ActionDescriptors.Items;
+        Assert.DoesNotContain(actions.OfType<ControllerActionDescriptor>(), action => action.ControllerTypeInfo.AsType() == typeof(AiDeviceQueriesController));
         using var startBudget = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await ObserveAsync(host.StartAsync(startBudget.Token));
         CaptureBindings();

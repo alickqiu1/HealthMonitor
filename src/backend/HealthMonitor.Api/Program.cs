@@ -88,6 +88,7 @@ builder.Services.AddReadApi();
 builder.Services.AddReadCors(builder.Configuration);
 builder.Services.AddOperationalProbes();
 builder.Services.AddSimulationApi(builder.Configuration, builder.Environment.EnvironmentName);
+builder.Services.AddAiQueryApi(builder.Configuration);
 
 // Register native ASP.NET Core OpenAPI document generation.
 builder.Services.AddOpenApi();
@@ -107,6 +108,7 @@ if (app.Environment.IsDevelopment())
 app.UseReadApiErrors();
 app.UseHttpsRedirection();
 app.UseRouting();
+app.UseAiQueryNoStore();
 // Browser response access is evaluated after routing and before endpoint authorization.
 app.UseCors(ReadCorsComposition.PolicyName);
 app.UseLocalSimulationAccess();

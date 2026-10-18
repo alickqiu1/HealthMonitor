@@ -78,6 +78,10 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    AiContract = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.AiQueryContractTests'
+        Cases = @('Disabled_AbsentAndCannotEnable', 'Ready_CanonicalWireAndZeroStorage', 'ClarificationAndUnsupported_FixedWire', 'InvalidPromptAndQuery_NoGeneration', 'StrictBodyShape_NoGeneration', 'BodyByteBounds_KnownStreamedUtf8', 'TypedAndUnexpectedFailures_SanitizedAndNoStore', 'Cancellation_ForwardsAndDrains', 'Cors_PostOnlyExactOrigins', 'SingleSubmission_GeneratesOnceAndSubsequentGetDoesNotRegenerate')
+    }
     SimulationHost = @{
         Class = 'HealthMonitor.IntegrationTests.Api.SimulationEffectiveHostTests'
         Cases = @('Loopback_AllowsLocalPost_ClosesListener', 'KestrelWildcardOverride_DeniesPost_ClosesListener', 'KestrelLoopbackOverride_AllowsPostDespiteWildcardUrl_ClosesListener', 'StartupAndBodyFailure_StillClosesListenerAndPreservesFailure')
@@ -194,7 +198,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

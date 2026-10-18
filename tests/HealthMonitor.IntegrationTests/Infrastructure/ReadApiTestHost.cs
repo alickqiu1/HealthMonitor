@@ -54,7 +54,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
     /// <summary>Builds only the shared read feature with explicit services, never application database configuration.</summary>
     /// <param name="configure">Fake services or contexts on an independently fixture-verified disposable source.</param>
     /// <param name="providerSpecificBroadRule">Whether a diagnostic test deliberately injects a broad conflicting rule.</param>
-    /// <param name="simulationConfiguration">Explicit nonsecret simulator/CORS settings only; omission keeps simulation disabled.</param>
+    /// <param name="simulationConfiguration">Explicit nonsecret simulator/CORS/AI settings only; omission keeps simulation disabled.</param>
     /// <param name="environmentName">Explicit test environment, never read from application settings or secrets.</param>
     /// <returns>Started caller-owned host; external sources/connections/transactions remain caller-owned.</returns>
     internal static Task<ReadApiTestHost> StartAsync(Action<IServiceCollection> configure, bool providerSpecificBroadRule = false,
@@ -125,6 +125,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                     services.AddFleetReads(new ConfigurationBuilder().Build());
                     services.AddReadCors(simulationConfiguration);
                     services.AddOperationalProbes();
+                    services.AddAiQueryApi(simulationConfiguration);
                     configure(services);
                     services.AddReadApi();
                     services.AddSimulationApi(simulationConfiguration, environmentName);
@@ -138,7 +139,7 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                         try { await next(); }
                         finally { done.TrySetResult(); }
                     });
-                    app.UseReadApiErrors(); app.UseRouting();
+                    app.UseReadApiErrors(); app.UseRouting(); app.UseAiQueryNoStore();
                     app.UseCors(ReadCorsComposition.PolicyName);
                     app.UseLocalSimulationAccess(); app.UseRateLimiter();
                     app.UseEndpoints(endpoints => { endpoints.MapControllers(); endpoints.MapOperationalProbes(); });
