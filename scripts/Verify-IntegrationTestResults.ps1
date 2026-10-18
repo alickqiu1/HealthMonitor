@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -89,6 +89,18 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    SimulationDatabase = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.SimulationApiDatabaseTests'
+        Methods = @{
+            Commit_PostThenGetPersistsSyntheticState = @('')
+            MatchingReplay_AfterRetirementAndExpiry_PreservesAllRows = @('')
+            Conflict_409PreservesAllRows = @('')
+            IneligibleRegistration_400PreservesAllRows = @('')
+            PostSaveFailure_500RollsBackAllRows = @('')
+            RateLimitedWrite_NoPersistenceOrCommands = @('')
+            DisabledSimulation_NoPersistenceOrCommands = @('')
         }
     }
     SimulationContract = @{

@@ -58,7 +58,10 @@ internal sealed class SimulationTestHost : IAsyncDisposable
 
     /// <summary>Changes only the fabricated feature inspected by the production gate, including missing evidence.</summary>
     /// <param name="addresses">Effective-address test facts; null removes the feature and an empty array supplies no addresses.</param>
-    internal void SetBindings(params string[]? addresses) => Http.Services.GetRequiredService<IServer>().Features
+    internal void SetBindings(params string[]? addresses) => ApplyBindings(Http, addresses);
+
+    /// <summary>Shares fabricated network evidence with the real PostgreSQL feature fixture without substituting its ingestion service.</summary>
+    internal static void ApplyBindings(ReadApiTestHost host, params string[]? addresses) => host.Services.GetRequiredService<IServer>().Features
         .Set<IServerAddressesFeature>(addresses is null ? null : new BindingFacts(addresses));
 
     /// <summary>Sends known-length or deliberately streamed UTF-8 JSON and transfers response ownership to the test.</summary>
@@ -103,7 +106,7 @@ internal sealed class SimulationTestHost : IAsyncDisposable
     }
 
     /// <summary>Sets controlled TestServer connection facts before the production security pipeline.</summary>
-    private sealed class NetworkFilter(NetworkFacts facts) : IStartupFilter
+    internal sealed class NetworkFilter(NetworkFacts facts) : IStartupFilter
     {
         /// <inheritdoc />
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>

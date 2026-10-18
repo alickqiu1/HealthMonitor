@@ -78,6 +78,10 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    SimulationDatabase = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.SimulationApiDatabaseTests'
+        Cases = @('Commit_PostThenGetPersistsSyntheticState', 'MatchingReplay_AfterRetirementAndExpiry_PreservesAllRows', 'Conflict_409PreservesAllRows', 'IneligibleRegistration_400PreservesAllRows', 'PostSaveFailure_500RollsBackAllRows', 'RateLimitedWrite_NoPersistenceOrCommands', 'DisabledSimulation_NoPersistenceOrCommands')
+    }
     SimulationContract = @{
         Class = 'HealthMonitor.IntegrationTests.Api.SimulationApiContractTests'
         Cases = @('DefaultDisabled_RouteAbsent', 'LocalAccess_AllEffectiveBindingAndIpGates', 'CommitAndSameIdReplay_WireWaitsForService', 'InvalidShapes_RejectBeforeIngestion', 'BodyLimit_ExactAndKnownOrChunkedOverflow', 'RateLimit_FiveThen429_DenialsDoNotConsumeQuota', 'OwnedErrors_SanitizedStableStatuses', 'CancellationAndUnexpectedFailures_NotValidation', 'Cors_PostPolicySeparateFromPublicReads', 'UnsupportedContentTypeAndUnknownQuery_RejectBeforeIngestion')
@@ -186,7 +190,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

@@ -1,6 +1,10 @@
 using System.Data;
 using System.Data.Common;
 using System.Runtime.ExceptionServices;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using HealthMonitor.Api.Composition;
 using HealthMonitor.Application.IntegrationContracts;
 using HealthMonitor.Domain.Device;
@@ -17,15 +21,19 @@ using Npgsql;
 
 namespace HealthMonitor.IntegrationTests.Infrastructure;
 
-/// <summary>Owns real HTTP/query proof only on fixture-verified healthmonitor_test, preserving the Device baseline by never committing its inserts.</summary>
+/// <summary>Owns real HTTP/query/ingestion proof only on fixture-verified healthmonitor_test, preserving the Device baseline by never committing its inserts.</summary>
 /// <remarks>
 /// Device request contexts share an externally owned connection/rollback transaction and are used sequentially only.
 /// Telemetry contexts use independent leases from the same verified source and retain their own history transactions.
-/// No full Program, workers, concurrent shared-connection proof, or hosted operations are involved.
+/// No full Program, application producer/retention workers, concurrent shared-connection proof, or hosted operations are involved.
 /// </remarks>
 internal sealed class ReadApiDatabaseScenario
 {
     private readonly TelemetryIngestionTestScenario telemetry;
+    // Borrow the fixture-owned parent context only for proven-owned inventory changes; never dispose it here.
+    private readonly DeviceDbContext ownedDeviceContext;
+    /// <summary>Configured before a request, never during one; applies only to subsequent scoped API Telemetry contexts.</summary>
+    internal List<IInterceptor> TelemetryInterceptors { get; } = new();
     internal ReadApiTestHost Host { get; private set; } = null!;
     internal CommandProbe Probe { get; } = new();
     internal MonitoredDevice[] Devices { get; }
@@ -34,11 +42,12 @@ internal sealed class ReadApiDatabaseScenario
     internal string Marker { get; }
     internal Guid UnknownId { get; private set; }
     private readonly List<Task> requests = new();
+    private readonly HashSet<Guid> reservedHttpBatches = new();
 
     /// <summary>Captures only owned facts after absence/capacity checks, before any feature request.</summary>
-    private ReadApiDatabaseScenario(TelemetryIngestionTestScenario telemetry, MonitoredDevice[] devices, int baselineActive, string marker)
+    private ReadApiDatabaseScenario(TelemetryIngestionTestScenario telemetry, MonitoredDevice[] devices, int baselineActive, string marker, DeviceDbContext ownedDeviceContext)
     {
-        this.telemetry = telemetry; Devices = devices; BaselineActive = baselineActive; Marker = marker;
+        this.telemetry = telemetry; Devices = devices; BaselineActive = baselineActive; Marker = marker; this.ownedDeviceContext = ownedDeviceContext;
     }
 
     /// <summary>Registers every client request as well as the host's independent server-side barriers.</summary>
@@ -53,8 +62,9 @@ internal sealed class ReadApiDatabaseScenario
     /// <summary>Runs one sequential fixture scenario; stops/drains the feature before rollback, then existing Telemetry ownership cleanup runs.</summary>
     /// <param name="body">Assertions against real controllers and both real query modules.</param>
     /// <param name="retireSecond">Whether explicit detail must read retired inventory.</param>
+    /// <param name="enableSimulation">Whether to compose real ingestion behind fabricated local network facts; default remains disabled.</param>
     /// <returns>Completion after baseline preservation checks.</returns>
-    internal static Task RunAsync(Func<ReadApiDatabaseScenario, Task> body, bool retireSecond = false) =>
+    internal static Task RunAsync(Func<ReadApiDatabaseScenario, Task> body, bool retireSecond = false, bool enableSimulation = false) =>
         TelemetryIngestionTestScenario.RunAsync(async test =>
         {
             await test.RequireEmptyTelemetryAsync();
@@ -74,7 +84,7 @@ internal sealed class ReadApiDatabaseScenario
             Assert.DoesNotContain(baseline, item => devices.Any(d => d.Id == item.Registration.DeviceId || d.AssetTag == item.Registration.AssetTag));
             int active = baseline.Count(d => !d.Registration.IsRetired);
             Assert.True(active + devices.Count(d => d.RetiredAtUtc is null) <= 1000, "Do not remove unrelated inventory to make fixture capacity.");
-            var scenario = new ReadApiDatabaseScenario(test, devices, active, marker);
+            var scenario = new ReadApiDatabaseScenario(test, devices, active, marker, deviceContext);
             Guid unknown;
             do { unknown = Guid.NewGuid(); } while (baseline.Any(d => d.Registration.DeviceId == unknown) || devices.Any(d => d.Id == unknown));
             scenario.UnknownId = unknown;
@@ -102,10 +112,21 @@ internal sealed class ReadApiDatabaseScenario
                         }
                     });
                     services.AddDbContext<TelemetryDbContext>((provider, options) => options.UseNpgsql(source)
-                        .UseLoggerFactory(provider.GetRequiredService<ILoggerFactory>()).AddInterceptors(scenario.Probe));
+                        .UseLoggerFactory(provider.GetRequiredService<ILoggerFactory>()).AddInterceptors(scenario.Probe).AddInterceptors(scenario.TelemetryInterceptors));
                     services.AddDeviceCatalog();
                     services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(test);
-                });
+                    if (enableSimulation)
+                    {
+                        services.AddTelemetryIngestion();
+                        services.AddSingleton<IStartupFilter>(new SimulationTestHost.NetworkFilter(new SimulationTestHost.NetworkFacts()));
+                    }
+                }, simulationConfiguration: new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Simulation:HttpEndpointEnabled"] = enableSimulation.ToString(),
+                    ["Simulation:AllowLocalAnonymous"] = enableSimulation.ToString(),
+                    ["Cors:AllowedOrigins:0"] = "http://localhost:5173"
+                }).Build(), environmentName: enableSimulation ? "Development" : "Testing");
+                if (enableSimulation) SimulationTestHost.ApplyBindings(scenario.Host, "http://127.0.0.1:5000");
                 await body(scenario);
             }
             catch (Exception error) { failure = error; }
@@ -133,6 +154,90 @@ internal sealed class ReadApiDatabaseScenario
             }
             if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
         });
+
+    /// <summary>Reserves every receipt before HTTP can write or encounter an uncertain outcome.</summary>
+    /// <returns>A proven-absent UUIDv7 at the controlled fixture clock.</returns>
+    internal async Task<Guid> ReserveBatchAsync()
+    {
+        Guid batch = Guid.CreateVersion7(Now);
+        await telemetry.ReserveBatchIdsAsync(new[] { batch });
+        Assert.True(reservedHttpBatches.Add(batch));
+        return batch;
+    }
+
+    /// <summary>Advances only the Application clock; cancellation deadlines and the actual HTTP quota retain real time.</summary>
+    /// <param name="elapsed">Positive UTC advance, for observation ordering and replay-age tests.</param>
+    internal void AdvanceClock(TimeSpan elapsed)
+    {
+        if (elapsed <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(elapsed));
+        telemetry.UtcNow = telemetry.UtcNow.Add(elapsed);
+    }
+
+    /// <summary>Registers POST work before returning it so client completion cannot race with fixture cleanup.</summary>
+    /// <param name="batch">Receipt identity previously reserved by this scenario.</param>
+    /// <param name="scenario">Canonical synthetic scenario.</param>
+    /// <param name="ids">Only fixture-owned selected identities.</param>
+    /// <returns>Caller-owned buffered response; the host separately drains server pipelines.</returns>
+    internal Task<HttpResponseMessage> PostAsync(Guid batch, string scenario, params Guid[] ids)
+    {
+        Assert.Contains(batch, reservedHttpBatches);
+        Assert.All(ids, id => Assert.Contains(id, telemetry.DeviceIds));
+        var request = telemetry.TrackWriter(Host.Client.PostAsJsonAsync(SimulationTestHost.Route,
+            new { batchId = batch, deviceIds = ids, scenario }, telemetry.Token));
+        requests.Add(request); return request;
+    }
+
+    /// <summary>Retires only a proven-owned registration inside the parent rollback-only Device transaction.</summary>
+    /// <param name="index">Index into the fixture's two proven-owned device registrations.</param>
+    /// <returns>Completion after saving only the owned retirement field.</returns>
+    internal async Task RetireOwnedDeviceAsync(int index)
+    {
+        var device = await RequireOwnedDeviceAsync(index);
+        ownedDeviceContext.Devices.Attach(device); device.Retire(Now);
+        ownedDeviceContext.Entry(device).Property(row => row.RetiredAtUtc).IsModified = true;
+        await ownedDeviceContext.SaveChangesAsync(telemetry.Token); ownedDeviceContext.ChangeTracker.Clear();
+    }
+
+    /// <summary>Removes only a proven-owned inserted row to exercise unknown-catalog rejection; rollback restores the original baseline.</summary>
+    /// <param name="index">Index into the fixture's two proven-owned device registrations.</param>
+    /// <returns>Completion after deleting exactly that inserted row inside the rollback-only transaction.</returns>
+    internal async Task RemoveOwnedRegistrationAsync(int index)
+    {
+        var device = await RequireOwnedDeviceAsync(index);
+        Assert.Equal(1, await ownedDeviceContext.Devices.Where(row => row.Id == device.Id).ExecuteDeleteAsync(telemetry.Token));
+        ownedDeviceContext.ChangeTracker.Clear();
+    }
+
+    /// <summary>Checks both reserved identity and exact seeded tag before any test-owned catalog mutation.</summary>
+    private async Task<MonitoredDevice> RequireOwnedDeviceAsync(int index)
+    {
+        if (index < 0 || index >= Devices.Length) throw new ArgumentOutOfRangeException(nameof(index));
+        var owned = Devices[index]; Assert.Contains(owned.Id, telemetry.DeviceIds);
+        var stored = await ownedDeviceContext.Devices.AsNoTracking().SingleAsync(row => row.Id == owned.Id, telemetry.Token);
+        Assert.Equal(owned.AssetTag, stored.AssetTag);
+        return owned;
+    }
+
+    /// <summary>Captures all mapped scalar facts in all four Telemetry tables for exact preservation assertions.</summary>
+    /// <remarks>Requires an empty Telemetry baseline and the exclusively owned, single-process disposable-database contract. Callers await serial HTTP acknowledgments first; this is not a cross-process guard or production snapshot API.</remarks>
+    /// <returns>Deterministically ordered persisted facts, excluding computed/nonmapped domain properties.</returns>
+    internal async Task<string> TelemetrySnapshotAsync()
+    {
+        await using var context = telemetry.Context();
+        var pings = await context.TelemetryPings.AsNoTracking().OrderBy(row => row.Id).ToArrayAsync(telemetry.Token);
+        var states = await context.DeviceTelemetryStates.AsNoTracking().OrderBy(row => row.DeviceId).ToArrayAsync(telemetry.Token);
+        var incidents = await context.IncidentLogs.AsNoTracking().OrderBy(row => row.Id).ToArrayAsync(telemetry.Token);
+        var receipts = await context.SimulationBatches.AsNoTracking().OrderBy(row => row.BatchId).ToArrayAsync(telemetry.Token);
+        return JsonSerializer.Serialize(new
+        {
+            pings = pings.Select(row => Facts(context, row)), states = states.Select(row => Facts(context, row)),
+            incidents = incidents.Select(row => Facts(context, row)), receipts = receipts.Select(row => Facts(context, row))
+        });
+    }
+
+    /// <summary>Uses EF mapped properties so preservation tests do not depend on future computed domain getters.</summary>
+    private static Dictionary<string, object?> Facts(DbContext context, object entity) => context.Entry(entity).Properties
+        .OrderBy(property => property.Metadata.Name, StringComparer.Ordinal).ToDictionary(property => property.Metadata.Name, property => property.CurrentValue);
 
     /// <summary>Preserves original assertion/setup failures while reporting cleanup failures too.</summary>
     private static Exception Combine(Exception? original, Exception cleanup) => original is null ? cleanup : new AggregateException(original, cleanup);

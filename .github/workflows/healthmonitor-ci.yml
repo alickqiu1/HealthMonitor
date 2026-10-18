@@ -437,6 +437,23 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/read-api/read-api.trx -Group ReadApi
 
+      # Simulation writes share the same exclusive, verified disposable target and existing ownership-aware cleanup.
+      - name: Run PostgreSQL simulation API integration tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Api.SimulationApiDatabaseTests" \
+            --logger "trx;LogFileName=simulation-api.trx" \
+            --results-directory artifacts/test-results/simulation-api
+
+      - name: Verify PostgreSQL simulation API execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/simulation-api/simulation-api.trx -Group SimulationDatabase
+
       - name: Upload integration test reports
         if: always()
         uses: actions/upload-artifact@v4
