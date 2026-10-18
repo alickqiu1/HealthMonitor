@@ -81,6 +81,7 @@ DatabaseConfiguration.AddRuntimeDatabase(
 builder.Services.AddDeviceCatalog();
 builder.Services.AddTelemetryIngestion();
 builder.Services.AddDemoProducer(builder.Configuration);
+builder.Services.AddTelemetryRetention();
 
 builder.Services.AddControllers();
 

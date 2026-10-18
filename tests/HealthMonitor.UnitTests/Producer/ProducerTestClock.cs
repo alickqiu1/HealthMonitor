@@ -2,11 +2,11 @@ using System.Threading.Channels;
 
 namespace HealthMonitor.UnitTests.Producer;
 
-/// <summary>Explicitly advanced monotonic/UTC clock for producer delay tests, requiring no real minute-long sleeps.</summary>
+/// <summary>Explicitly advanced monotonic/UTC clock for producer and retention worker delay tests, requiring no real minute-long sleeps.</summary>
 /// <remarks>
 /// Timer notifications let tests wait until the worker has scheduled its next delay before advancing time.
 /// Callbacks execute outside the clock lock, matching the reentrant disposal required by Task.Delay cancellation.
-/// The producer uses one-shot timers; periodic behavior is supported for completeness without background threads.
+/// Both workers use one-shot timers; periodic behavior is supported for completeness without background threads.
 /// </remarks>
 internal sealed class ProducerTestClock : TimeProvider
 {
