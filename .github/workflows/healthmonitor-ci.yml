@@ -166,6 +166,23 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/simulation-contract/simulation-contract.trx -Group SimulationContract
 
+      # Real ephemeral Kestrel binding tests use fake Application ports and no database or application startup settings.
+      - name: Run database-free effective simulation host tests
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Api.SimulationEffectiveHostTests" \
+            --logger "trx;LogFileName=simulation-host.trx" \
+            --results-directory artifacts/test-results/simulation-host
+
+      - name: Verify effective simulation host execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/simulation-host/simulation-host.trx -Group SimulationHost
+
       - name: Restore .NET tools
         run: dotnet tool restore
 

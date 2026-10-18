@@ -78,6 +78,10 @@ $fixtures = @{
             'Contention_UsesTwoSecondTimeout_LeavesNoWrites', 'CancellationWhileWaiting_PropagatesAndLeavesNoWrites',
             'DuplicateUnderLock_RecheckReturnsSingleCommittedBatch')
     }
+    SimulationHost = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.SimulationEffectiveHostTests'
+        Cases = @('Loopback_AllowsLocalPost_ClosesListener', 'KestrelWildcardOverride_DeniesPost_ClosesListener', 'KestrelLoopbackOverride_AllowsPostDespiteWildcardUrl_ClosesListener', 'StartupAndBodyFailure_StillClosesListenerAndPreservesFailure')
+    }
     SimulationDatabase = @{
         Class = 'HealthMonitor.IntegrationTests.Api.SimulationApiDatabaseTests'
         Cases = @('Commit_PostThenGetPersistsSyntheticState', 'MatchingReplay_AfterRetirementAndExpiry_PreservesAllRows', 'Conflict_409PreservesAllRows', 'IneligibleRegistration_400PreservesAllRows', 'PostSaveFailure_500RollsBackAllRows', 'RateLimitedWrite_NoPersistenceOrCommands', 'DisabledSimulation_NoPersistenceOrCommands')
@@ -190,7 +194,7 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {

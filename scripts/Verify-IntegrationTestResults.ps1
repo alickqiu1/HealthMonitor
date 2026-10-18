@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -89,6 +89,15 @@ $inventories = @{
             Contention_UsesTwoSecondTimeout_LeavesNoWrites = @('')
             CancellationWhileWaiting_PropagatesAndLeavesNoWrites = @('')
             DuplicateUnderLock_RecheckReturnsSingleCommittedBatch = @('')
+        }
+    }
+    SimulationHost = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.SimulationEffectiveHostTests'
+        Methods = @{
+            Loopback_AllowsLocalPost_ClosesListener = @('')
+            KestrelWildcardOverride_DeniesPost_ClosesListener = @('')
+            KestrelLoopbackOverride_AllowsPostDespiteWildcardUrl_ClosesListener = @('')
+            StartupAndBodyFailure_StillClosesListenerAndPreservesFailure = @('')
         }
     }
     SimulationDatabase = @{
