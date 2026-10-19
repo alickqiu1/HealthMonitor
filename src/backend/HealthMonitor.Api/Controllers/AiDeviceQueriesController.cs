@@ -16,7 +16,7 @@ namespace HealthMonitor.Api.Controllers;
 [ServiceFilter(typeof(AiQueryBodyLimitFilter))]
 public sealed class AiDeviceQueriesController(TranslateDeviceQuery translate) : ControllerBase
 {
-    /// <summary>Returns a validated filter proposal or a contextual safe input/output failure.</summary>
+    /// <summary>Returns a validated filter proposal or a contextual safe input, output, or provider failure.</summary>
     /// <param name="request">Strictly inspected prompt shape.</param>
     /// <param name="token">Request cancellation forwarded through Application to the generator.</param>
     /// <returns>A server-owned V1 decision with no provider reason or narrative fields.</returns>
@@ -27,6 +27,8 @@ public sealed class AiDeviceQueriesController(TranslateDeviceQuery translate) : 
     [ProducesResponseType<ProblemDetails>(413)]
     [ProducesResponseType<ProblemDetails>(415)]
     [ProducesResponseType<ProblemDetails>(502)]
+    [ProducesResponseType<ProblemDetails>(503)]
+    [ProducesResponseType<ProblemDetails>(504)]
     [ProducesResponseType<ProblemDetails>(500)]
     public async Task<IActionResult> Translate([FromBody] AiDeviceQueryRequestDto request, CancellationToken token)
     {
@@ -36,6 +38,11 @@ public sealed class AiDeviceQueriesController(TranslateDeviceQuery translate) : 
         { return AiQueryProblems.Result(HttpContext, 400, "ai_prompt_invalid", "The prompt must contain 1-500 characters after trimming."); }
         catch (InvalidStructuredQueryException)
         { return AiQueryProblems.Result(HttpContext, 502, "ai_output_invalid", "The generated query proposal is invalid."); }
+        // Only owned provider classifications select these statuses; caller cancellation and unexpected faults retain their existing paths.
+        catch (AiProviderUnavailableException)
+        { return AiQueryProblems.Result(HttpContext, 503, "ai_provider_unavailable", "The AI provider is unavailable."); }
+        catch (AiProviderTimeoutException)
+        { return AiQueryProblems.Result(HttpContext, 504, "ai_provider_timeout", "The AI provider request timed out."); }
         var query = result.Query;
         return Ok(new AiDeviceQueryResponseDto(result.Outcome,
             query is null ? null : new(query.Q, query.Site, query.Type, query.Status, query.Sort!, query.Direction!), result.Message));

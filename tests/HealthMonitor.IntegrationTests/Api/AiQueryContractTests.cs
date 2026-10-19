@@ -170,6 +170,7 @@ public sealed class AiQueryContractTests
         Assert.Equal(2, host.Generation.Calls.Count); NoStorage(host); SafeLogs(host);
     }
 
+    /// <summary>Distinguishes owned provider failures from invalid output and unexpected faults without exposing request or provider content.</summary>
     [Fact]
     public async Task TypedAndUnexpectedFailures_SanitizedAndNoStore()
     {
@@ -182,7 +183,25 @@ public sealed class AiQueryContractTests
             using var response = await host.PostAsync(Payload(Canary));
             await Problem(host, response, HttpStatusCode.InternalServerError, "unexpected_error");
         }
-        Assert.Equal(4, host.Generation.Calls.Count); NoStorage(host); SafeLogs(host);
+        Assert.Equal(4, host.Generation.Calls.Count);
+        foreach (bool synchronous in new[] { false, true })
+        foreach (var (error, status, code, title) in new (Exception, HttpStatusCode, string, string)[]
+        {
+            (new AiProviderUnavailableException(), HttpStatusCode.ServiceUnavailable, "ai_provider_unavailable", "The AI provider is unavailable."),
+            (new AiProviderTimeoutException(), HttpStatusCode.GatewayTimeout, "ai_provider_timeout", "The AI provider request timed out.")
+        })
+        {
+            host.Generation.Generate = (_, _, _) => synchronous ? throw error : Task.FromException<StructuredQueryProposal?>(error);
+            int before = host.Generation.Calls.Count;
+            using var response = await host.PostAsync(Payload(Canary));
+            await Problem(host, response, status, code);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(title, document.RootElement.GetProperty("title").GetString());
+            Assert.Equal(before + 1, host.Generation.Calls.Count);
+            // Provider failures do not acquire local rate-limit semantics or forward provider headers.
+            Assert.False(response.Headers.Contains("Retry-After"));
+        }
+        Assert.Equal(8, host.Generation.Calls.Count); NoStorage(host); SafeLogs(host);
     }
 
     [Fact]
