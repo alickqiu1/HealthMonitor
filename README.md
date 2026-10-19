@@ -80,6 +80,33 @@ The checked-in HTTPS profile uses `https://localhost:7080`; a trusted local deve
 
 The public read routes include `/api/v1/metrics/summary`, `/api/v1/devices`, and device detail/history routes. Simulation and the producer require explicit enablement. AI routing remains disabled; trusted ingress parsing alone does not configure forwarding or complete AI activation. Ordinary reads do not depend on AI availability.
 
+## Run a populated synthetic demo
+
+Use your own dedicated PostgreSQL database; downloaders do not share this project's database or credentials. PostgreSQL is required by the existing persistence implementation. For Supabase, use the project's direct connection or session pooler on port 5432, with certificate validation (`SSL Mode=VerifyFull`); the transaction pooler on port 6543 is unsupported.
+
+1. Follow the architecture plan's [database provisioning and privileges](docs/architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md#23-database-provisioning-and-privileges). Keep Device and Telemetry schemas private. The runtime account needs catalog SELECT and the specified Telemetry permissions, without catalog writes, ownership or schema creation privileges.
+2. Configure the separate runtime and maintenance connection strings in local .NET User Secrets for the API project, following the linked configuration procedure. Do not put them in `.env.local`, source files, command history or screenshots. Apply Device migrations before Telemetry migrations using the maintenance account. Skip already applied migrations; never reset an existing database to prepare a demo.
+3. In Development mode, run the explicit `--provision-devices` maintenance command described in the architecture plan. It creates the fixed 24-device catalog and exits; normal API startup does neither provisioning nor migrations. Verify the selected target before any maintenance operation.
+4. Ensure the localhost HTTPS development certificate is valid and trusted. `dotnet dev-certs https --check --trust` checks both. If trust is missing, `dotnet dev-certs https --trust` requests a local trust change; approve it only on your own development machine.
+5. From the repository root, start one API with explicit demo-only settings. These command-line overrides apply only to that process; they do not change user secrets, configuration files or the shell environment:
+
+```powershell
+dotnet run --project src/backend/HealthMonitor.Api --configuration Release --launch-profile https -- `
+    --DemoProducer:Enabled=true `
+    --DemoProducer:IntervalSeconds=60 `
+    --AiQueries:Enabled=false `
+    --Simulation:HttpEndpointEnabled=false `
+    --Simulation:AllowLocalAnonymous=false
+```
+
+Keep `DemoProducer:IntervalSeconds=60`, AI disabled, and both HTTP simulation flags disabled for this walkthrough. Run only one producer against the database. Normal startup immediately runs retention before its periodic schedule; select a dedicated synthetic dataset and do not point this demonstration at unrelated operational data. Stopping the API stops production, but committed synthetic history remains subject to retention.
+
+6. Start the frontend as described above, using `https://localhost:7080` as its public API URL, and open `http://localhost:5173`. Keep the API origin and frontend CORS origin exact; avoid certificate exceptions. After the first minute, the producer supplies four six-device groups: Healthy, HighLatency, HighCpu and Timeout. Groups rotate after four scheduled observations, so allow several minutes to see measurement changes and incident recovery. A timeout has no latency/CPU measurement; a missing value is not zero.
+
+For a short walkthrough, keep Automatic updates enabled and compare observation timestamps across a minute boundary. Filter for Degraded or Offline devices, open **View details**, and inspect measurements and retained incidents. Return to all health states to see recovery when groups rotate. Exercise Search/Clear search, sorting, then pause updates and use manual refresh. In the details panel, check keyboard focus, Tab containment, Escape, focus restoration and narrow-screen scrolling in a real browser. Section timestamps can differ because their reads are independent.
+
+Useful screenshots show the populated fleet, a filtered unhealthy view, and a device's measurements/incidents. Capture actual browser output without developer tools, credentials or connection settings; label the data as synthetic. Screenshots and automated component tests do not establish complete accessibility or hosted production acceptance.
+
 ## AI-assisted development
 
 The owner did not personally write the application code. AI coding agents generated the implementation and tests. The owner helped organize the architecture plan and guided the first two development steps to establish the working method.
