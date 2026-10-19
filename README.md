@@ -54,7 +54,7 @@ dotnet test tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj -c Rele
 
 These commands build the backend and run unit tests without PostgreSQL, provider credentials or a running application. They may restore NuGet packages. Build backend projects explicitly: the solution also contains an independent JavaScript project.
 
-To start the frontend, use Node.js 24 LTS and npm in a separate terminal. Create `.env.local` from `.env.example` if it does not already exist, or update only its public `VITE_API_BASE_URL`. The example matches the checked-in API HTTPS profile (`https://localhost:7080`); it contains no provider credentials:
+To start the frontend, use Node.js 24.15 or newer within the 24 LTS line, with npm in a separate terminal. Create `.env.local` from `.env.example` if it does not already exist, or update only its public `VITE_API_BASE_URL`. The example matches the checked-in API HTTPS profile (`https://localhost:7080`); it contains no provider credentials:
 
 ```powershell
 cd src/frontend/health-monitor-web
