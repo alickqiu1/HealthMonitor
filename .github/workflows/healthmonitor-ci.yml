@@ -90,8 +90,8 @@ jobs:
       # the complete HealthMonitor.slnx solution.
       #
       # The solution contains a Visual Studio JavaScript
-      # project (.esproj), which should have its own frontend
-      # CI steps using Node.js and npm.
+      # project (.esproj); frontend checks run in the independent
+      # Node.js/npm job below.
       #
       # Separating these builds avoids introducing frontend
       # tooling requirements into backend validation.
@@ -495,3 +495,21 @@ jobs:
           name: integration-test-results
           path: artifacts/test-results/**/*.trx
           if-no-files-found: warn
+
+  frontend:
+    name: Frontend Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend/health-monitor-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: src/frontend/health-monitor-web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

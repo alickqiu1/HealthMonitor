@@ -2,7 +2,7 @@
 
 HealthMonitor monitors a fictional infrastructure fleet using device registrations, simulated telemetry, health assessments and incident history. Its intended dashboard helps users find unhealthy devices and inspect their recent measurements and incidents.
 
-**Current state:** the backend APIs and persistence foundations are implemented and tested. The React application is still the starter screen; the working dashboard is the next development milestone. AI translation is disabled in production composition.
+**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes a fleet-summary screen with refresh and failure states. The device grid and drawer remain planned; browser-to-live-API verification is still pending. AI translation is disabled in production composition.
 
 ## Functionality
 
@@ -19,7 +19,7 @@ All inventory and telemetry are synthetic. This application is not connected to 
 The backend is a .NET 10 modular application with a single ASP.NET Core facade:
 
 ```text
-React client (planned dashboard)
+React client — fleet summary; grid and drawer planned
             |
 ASP.NET Core API — HTTP contracts and composition
             |
@@ -39,7 +39,7 @@ Device owns registrations; Telemetry owns measurements and incidents. Applicatio
 | `src/backend/HealthMonitor.Application` | Use cases, query contracts and ports |
 | `src/backend/HealthMonitor.Domain` | Domain rules and models |
 | `src/backend/HealthMonitor.Infrastructure` | PostgreSQL persistence and provider adapters |
-| `src/frontend/health-monitor-web` | React, TypeScript, Vite and Tailwind frontend scaffold |
+| `src/frontend/health-monitor-web` | React, TypeScript, Vite and Tailwind frontend; fleet-summary screen |
 | `tests` | Backend unit, HTTP and isolated PostgreSQL tests |
 | `scripts` | Strict integration-result verification and its database-free self-tests |
 
@@ -54,7 +54,7 @@ dotnet test tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj -c Rele
 
 These commands build the backend and run unit tests without PostgreSQL, provider credentials or a running application. They may restore NuGet packages. Build backend projects explicitly: the solution also contains an independent JavaScript project.
 
-To view the **frontend starter only**, use Node.js 24 LTS and npm in a separate terminal:
+To start the frontend, use Node.js 24 LTS and npm in a separate terminal. Create `.env.local` from `.env.example` if it does not already exist, or update only its public `VITE_API_BASE_URL`. The example matches the checked-in API HTTPS profile (`https://localhost:7080`); it contains no provider credentials:
 
 ```powershell
 cd src/frontend/health-monitor-web
@@ -62,7 +62,7 @@ npm ci
 npm run dev
 ```
 
-This currently shows the scaffold, not a connected monitoring dashboard.
+Start the API using the prerequisites below to load real summaries. The development server uses `http://localhost:5173`, matching the API CORS origin; an occupied port fails rather than silently selecting a different origin. Without a configured or reachable API, the screen shows a setup/error state.
 
 ## Run the API
 
@@ -86,10 +86,10 @@ Work proceeds in small increments with local checks and GitHub Actions verificat
 
 ## Verification and development
 
-[GitHub Actions](https://github.com/alickqiu1/HealthMonitor/actions/workflows/healthmonitor-ci.yml) builds and tests the backend, provisions disposable PostgreSQL, applies both schema migrations, and verifies required integration cases. Database tests must target the dedicated, verified `healthmonitor_test` database; never point them at development or production Supabase. The current workflow does not verify a completed frontend or a live AI provider.
+[GitHub Actions](https://github.com/alickqiu1/HealthMonitor/actions/workflows/healthmonitor-ci.yml) builds and tests the backend, provisions disposable PostgreSQL, applies both schema migrations, and verifies required integration cases. Database tests must target the dedicated, verified `healthmonitor_test` database; never point them at development or production Supabase. A separate frontend job runs lint, client/component tests and the production build. Those tests use controlled responses; they do not prove a live browser-to-API journey or live AI behavior. Run `npm test`, `npm run lint` and `npm run build` from the frontend directory for the same local checks.
 
 - [Implementation progress](docs/development/ImplementationProgress.md): current milestone, approved roadmap, executed test evidence and known gaps.
 - [Technical Architecture Plan, Edition 1.5](docs/architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md): authoritative requirements, module boundaries, setup and operational procedures.
 - [AI provider decision](docs/development/AiProviderDecision.md): selected provider/model, rationale and remaining evaluation limits.
 
-The next visible application increment is the read-only dashboard built on the existing APIs. Remaining AI ingress, credential composition, counter provisioning and activation work stays open; resume it from the progress document rather than treating tested components as an enabled feature.
+The next visible application increments are the server-paged device grid and drawer on the existing read APIs. Remaining AI ingress, credential composition, counter provisioning and activation work stays open; resume it from the progress document rather than treating tested components as an enabled feature.
