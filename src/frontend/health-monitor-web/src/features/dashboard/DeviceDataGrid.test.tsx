@@ -28,7 +28,7 @@ function pageResponse(page: number, pageSize = 25, totalCount = 60, items: unkno
 }
 /** Models the dashboard's one applied-query owner without storing response rows in React state. */
 function Harness({ fetcher, initial }: { fetcher: typeof fetch; initial: PaginationState }) {
-  const [state, setState] = useState<DeviceGridState>({ pagination: initial, q: '' })
+  const [state, setState] = useState<DeviceGridState>({ pagination: initial, q: '', site: '', type: '', status: '' })
   return <DeviceDataGrid api={createReadApi('https://example.test', fetcher)} state={state} onStateChange={setState} />
 }
 /** Each case gets an isolated real Query cache; a zero GC delay exposes missing observer ownership. */
@@ -110,7 +110,7 @@ it('resets to page one when capacity changes and never labels previous rows as t
   fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await screen.findByText('Device 2')
   fireEvent.change(screen.getByRole('combobox', { name: 'Devices per page' }), { target: { value: '50' } })
   expect(await screen.findByText(/Showing previous page 2 \(25 per page\).*Requested page 1 \(50 per page\)/)).toBeTruthy()
-  expect((screen.getByRole('combobox') as HTMLSelectElement).disabled).toBe(true)
+  expect((screen.getByRole('combobox', { name: 'Devices per page' }) as HTMLSelectElement).disabled).toBe(true)
   expect(screen.getByText('Page 2 of 3')).toBeTruthy()
   expect(screen.queryByText('Page 2 of 2')).toBeNull()
   await act(async () => finish(pageResponse(1, 50)))
@@ -382,7 +382,7 @@ it('distinguishes no search matches from an empty fleet and keeps literal text s
   const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pageResponse(1)).mockResolvedValueOnce(pageResponse(1, 25, 0, []))
   mount(fetcher); await screen.findByText('Device 1')
   search('<img src=x onerror=alert(1)>')
-  await screen.findByText('No active devices match this search.')
+  await screen.findByText('No active devices match these filters.')
   expect(screen.queryByText('No active devices.')).toBeNull()
   expect(screen.getByText('Page 1 of 1')).toBeTruthy()
   expect(screen.queryByRole('img')).toBeNull()
@@ -415,7 +415,7 @@ it('ignores late superseded searches at equal coordinates and prevents stale ran
   await screen.findByText('Page 2 of 3')
   await act(async () => finishOldPage(pageResponse(2, 25, 0, [])))
   expect(screen.getByText('Page 2 of 3')).toBeTruthy()
-  expect(screen.queryByText('No active devices match this search.')).toBeNull()
+  expect(screen.queryByText('No active devices match these filters.')).toBeNull()
   expect(signals[0].aborted).toBe(true); expect(signals.at(-1)?.aborted).toBe(true)
   expect(searches(fetcher).at(-1)).toEqual({ q: 'new', page: 2, pageSize: 25 })
 })
@@ -429,10 +429,104 @@ it('searches and paginates while paused without refetching or filtering global m
   render(<QueryClientProvider client={client}><App /></QueryClientProvider>)
   await screen.findByText('42'); await screen.findByText('Device 1')
   search('DEV'); await screen.findByText('Displayed results: search “DEV”')
+  filter('Site', 'EDM'); await screen.findByText('Displayed results: search “DEV” · site EDM')
   fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await screen.findByText('Device 2')
   await act(async () => { await client.invalidateQueries({ queryKey: ['devices'] }) })
   const calls = fetcher.mock.calls.map(([input]) => new URL(String(input)))
   expect(calls.filter(url => url.pathname.endsWith('/metrics/summary'))).toHaveLength(1)
-  expect(calls.filter(url => url.pathname.endsWith('/devices')).map(url => [url.searchParams.get('q'), url.searchParams.get('page')])).toEqual([[null, '1'], ['DEV', '1'], ['DEV', '2'], ['DEV', '2']])
+  expect(calls.filter(url => url.pathname.endsWith('/devices')).map(url => [url.searchParams.get('q'), url.searchParams.get('page')])).toEqual([[null, '1'], ['DEV', '1'], ['DEV', '1'], ['DEV', '2'], ['DEV', '2']])
+  expect(calls.at(-1)?.searchParams.get('site')).toBe('EDM')
   expect(screen.getByText('42')).toBeTruthy(); expect(screen.getByText('Paused')).toBeTruthy()
+})
+
+
+/** Selects use the visible controls and apply immediately; no form submission is synthesized. */
+function filter(name: 'Site' | 'Type' | 'Health', value: string) {
+  fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } })
+}
+/** Reads complete actual wire inputs; tests never substitute current-page client filtering. */
+function filterRequests(fetcher: ReturnType<typeof vi.fn<typeof fetch>>) {
+  return fetcher.mock.calls.map(([input]) => Object.fromEntries(new URL(String(input)).searchParams))
+}
+
+it('combines applied search and selects, preserves page size, and distinguishes Clear search from Clear all filters', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async input => {
+    const query = new URL(String(input)).searchParams
+    return pageResponse(Number(query.get('page')), 10, 24, [{ ...row(query.has('site') ? 24 : 1), displayName: query.has('site') ? 'Off-page filter match' : 'Unfiltered row' }])
+  })
+  mount(fetcher, { pageIndex: 1, pageSize: 10 }); await screen.findByText('Unfiltered row')
+  search('DEV'); await screen.findByText('Displayed results: search “DEV”')
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await screen.findByText('Page 2 of 3')
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'unapplied draft' } })
+  filter('Site', 'EDM'); await screen.findByText('Off-page filter match')
+  expect(filterRequests(fetcher).at(-1)).toMatchObject({ q: 'DEV', site: 'EDM', page: '1', pageSize: '10' })
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('unapplied draft')
+  filter('Type', 'Server'); await screen.findByText('Displayed results: search “DEV” · site EDM · type Server')
+  filter('Health', 'Unknown'); await screen.findByText('Displayed results: search “DEV” · site EDM · type Server · health Unknown')
+  expect(filterRequests(fetcher).at(-1)).toMatchObject({ q: 'DEV', site: 'EDM', type: 'Server', status: 'Unknown', page: '1', pageSize: '10' })
+  fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+  await screen.findByText('Displayed results: site EDM · type Server · health Unknown')
+  expect(filterRequests(fetcher).at(-1)?.q).toBeUndefined()
+  expect(filterRequests(fetcher).at(-1)).toMatchObject({ site: 'EDM', type: 'Server', status: 'Unknown' })
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+  fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }))
+  await screen.findByText('Displayed results: all active devices')
+  for (const name of ['Site', 'Type', 'Health']) expect((screen.getByRole('combobox', { name }) as HTMLSelectElement).value).toBe('')
+  expect(screen.getByText('Page 1 of 3')).toBeTruthy()
+})
+
+it.each([['Site', 'EDM', 'CGY', 'site'], ['Type', 'Server', 'Gateway', 'type'], ['Health', 'Unknown', 'Offline', 'status']] as const)('retains distinct same-page %s filter identity, count and time during failure and retries the requested value', async (name, first, second, key) => {
+  let fail!: (error: Error) => void
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pageResponse(1))
+    .mockResolvedValueOnce(pageResponse(1, 25, 30, [{ ...row(5), displayName: 'Previous filter result' }]))
+    .mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+    .mockResolvedValueOnce(pageResponse(1, 25, 1, [{ ...row(6), displayName: 'Requested filter result' }]))
+  mount(fetcher); await screen.findByText('Device 1')
+  filter(name, first); await screen.findByText('Previous filter result')
+  const stamp = screen.getByText(/Device fetch/).querySelector('time')?.dateTime
+  filter(name, second)
+  expect(await screen.findByText(new RegExp('Showing previous page 1 .*' + first + '.*Requested page 1 .*' + second))).toBeTruthy()
+  await act(async () => fail(new Error('private canary'))); await screen.findByRole('alert')
+  expect(screen.getByText('Previous filter result')).toBeTruthy()
+  expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+  expect(screen.getByText(/30 matching active devices/)).toBeTruthy()
+  expect(screen.getByText(/Device fetch/).querySelector('time')?.dateTime).toBe(stamp)
+  fireEvent.click(screen.getByRole('button', { name: 'Retry devices' })); await screen.findByText('Requested filter result')
+  expect(filterRequests(fetcher).map(request => request[key])).toEqual([undefined, first, second, second])
+  expect(screen.queryByText(/private canary/)).toBeNull()
+})
+
+it('offers every supported capability even when no current row matches, with explicit neutral choices', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async input => pageResponse(Number(new URL(String(input)).searchParams.get('page')), 25, 0, []))
+  mount(fetcher); await screen.findByText('No active devices.')
+  for (const [name, label, values] of [['Site', 'All sites', ['EDM', 'CGY', 'DEN']], ['Type', 'All types', ['Server', 'Database', 'Gateway', 'SCADA']], ['Health', 'All health states', ['Healthy', 'Degraded', 'Offline', 'Unknown']]] as const) {
+    const select = screen.getByRole('combobox', { name })
+    expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual([label, ...values])
+    for (const value of values) {
+      filter(name, value)
+      await screen.findByText('No active devices match these filters.')
+      await waitFor(() => expect(filterRequests(fetcher).at(-1)?.[name === 'Site' ? 'site' : name === 'Type' ? 'type' : 'status']).toBe(value))
+    }
+    filter(name, ''); await screen.findByText('No active devices.')
+  }
+})
+
+it('ignores a superseded filter page completion without moving a different filter at equal coordinates', async () => {
+  let finish!: (response: Response) => void
+  let oldSignal!: AbortSignal
+  const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+    const query = new URL(String(input)).searchParams; const page = Number(query.get('page'))
+    if (query.get('site') === 'EDM' && page === 2) return new Promise(resolve => { finish = resolve; oldSignal = init?.signal as AbortSignal })
+    return Promise.resolve(pageResponse(page, 25, 60))
+  })
+  mount(fetcher); await screen.findByText('Device 1')
+  filter('Site', 'EDM'); await screen.findByText('Displayed results: site EDM')
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await waitFor(() => expect(finish).toBeTypeOf('function'))
+  filter('Site', 'CGY'); await screen.findByText('Displayed results: site CGY')
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await screen.findByText('Page 2 of 3')
+  await act(async () => finish(pageResponse(2, 25, 0, [])))
+  expect(screen.getByText('Page 2 of 3')).toBeTruthy()
+  expect(screen.getByText('Displayed results: site CGY')).toBeTruthy()
+  expect(oldSignal.aborted).toBe(true)
+  expect(filterRequests(fetcher).at(-1)).toMatchObject({ site: 'CGY', page: '2' })
 })

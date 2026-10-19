@@ -14,8 +14,13 @@ export type DeviceRow = Readonly<{
   cpuPercent: number | null
 }>
 
+/** Supported API filter capabilities, not inventory invariants or values inferred from the current page. */
+export const deviceSites = ['EDM', 'CGY', 'DEN'] as const
+export const deviceTypes = ['Server', 'Database', 'Gateway', 'SCADA'] as const
+export const deviceHealthStates = ['Healthy', 'Degraded', 'Offline', 'Unknown'] as const satisfies readonly DeviceHealth[]
+
 /** API coordinates are one-based; the table translates its zero-based state at the call site. */
-export type DevicePageRequest = Readonly<{ page: number; pageSize: number; q?: string }>
+export type DevicePageRequest = Readonly<{ page: number; pageSize: number; q?: string; site?: string; type?: string; status?: DeviceHealth | '' }>
 
 /** One server page with a fleet result count; items are never treated as the entire inventory. */
 export type DevicePage = Readonly<{
@@ -118,7 +123,7 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
     },
     /**
      * Gets one globally searched page in displayName ascending order; no local filtering occurs.
-     * @param request One-based page, capacity 1..100, and optional literal name/tag search (100 UTF-16 units after trimming).
+     * @param request One-based page, capacity 1..100, optional literal name/tag search (100 UTF-16 units after trimming), and canonical AND filters. Empty filter values are neutral.
      * @param signal Query-owned cancellation; no deadline or retry is added here.
      * @returns A checked page matching the requested coordinates, with stable catalog IDs and explicit nulls.
      * @throws ReadApiError for invalid coordinates or invalid transport/response data, without echoing raw diagnostics.
@@ -133,6 +138,14 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
       if (q.length > 100) throw new ReadApiError('The device search must contain at most 100 characters after trimming.')
       const search = new URLSearchParams({ page: String(request.page), pageSize: String(request.pageSize), sort: 'displayName', direction: 'asc' })
       if (q) search.set('q', q)
+      // Validate even typed callers at the public transport boundary; neutral options are omitted, not blank tokens.
+      for (const [key, value, supported] of [
+        ['site', request.site, deviceSites], ['type', request.type, deviceTypes], ['status', request.status, deviceHealthStates],
+      ] as const) {
+        if (value === undefined || value === '') continue
+        if (typeof value !== 'string' || !(supported as readonly string[]).includes(value)) throw new ReadApiError('The device filter is invalid.')
+        search.set(key, value)
+      }
       const body = await readJson(`/api/v1/devices?${search}`, signal, 'devices')
       if (!isDevicePage(body, request)) throw invalidPayload('devices')
       return body

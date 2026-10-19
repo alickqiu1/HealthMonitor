@@ -11,7 +11,7 @@ function App() {
   const pollingEnabled = useDashboardPreferences(state => state.pollingEnabled)
   const setPollingEnabled = useDashboardPreferences(state => state.setPollingEnabled)
   // Applied search and paging change atomically with one dashboard owner; Query alone owns response data.
-  const [grid, setGrid] = useState<DeviceGridState>({ pagination: { pageIndex: 0, pageSize: 25 }, q: '' })
+  const [grid, setGrid] = useState<DeviceGridState>({ pagination: { pageIndex: 0, pageSize: 25 }, q: '', site: '', type: '', status: '' })
   let api: ReadApi | undefined
   let configurationError = 'The monitoring API connection is unavailable.'
   // Only configuration parsing is caught here. Rendering happens outside this boundary.

@@ -148,3 +148,27 @@ describe('literal global device search', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 })
+
+
+describe('canonical server device filters', () => {
+  it.each([['site', 'EDM'], ['site', 'CGY'], ['site', 'DEN'], ['type', 'Server'], ['type', 'Database'], ['type', 'Gateway'], ['type', 'SCADA'], ['status', 'Healthy'], ['status', 'Degraded'], ['status', 'Offline'], ['status', 'Unknown']])('accepts supported %s=%s', async (key, value) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(page()))
+    await createReadApi('https://example.test', fetcher).getDevices({ page: 1, pageSize: 25, [key]: value }, new AbortController().signal)
+    expect(new URL(String(fetcher.mock.calls[0][0])).searchParams.get(key)).toBe(value)
+  })
+  it.each([['site', 'edm'], ['site', 'SEA'], ['type', 'server'], ['type', 'Router'], ['status', 'healthy'], ['status', '0'], ['site', null], ['type', 42]])('rejects noncanonical %s=%s before HTTP', async (key, value) => {
+    const fetcher = vi.fn<typeof fetch>()
+    await expect(createReadApi('https://example.test', fetcher).getDevices({ page: 1, pageSize: 25, [key]: value }, new AbortController().signal)).rejects.toBeInstanceOf(ReadApiError)
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('omits all neutral options, preserving the existing unfiltered request', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(page()))
+    await createReadApi('https://example.test', fetcher).getDevices({ page: 1, pageSize: 25, site: '', type: '', status: '' }, new AbortController().signal)
+    expect([...new URL(String(fetcher.mock.calls[0][0])).searchParams.keys()]).toEqual(['page', 'pageSize', 'sort', 'direction'])
+  })
+  it('sends search and all AND filters together without changing sort or coordinates', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(page()))
+    await createReadApi('https://example.test', fetcher).getDevices({ page: 1, pageSize: 25, q: 'EDM & 1', site: 'EDM', type: 'Server', status: 'Unknown' }, new AbortController().signal)
+    expect(Object.fromEntries(new URL(String(fetcher.mock.calls[0][0])).searchParams)).toEqual({ page: '1', pageSize: '25', sort: 'displayName', direction: 'asc', q: 'EDM & 1', site: 'EDM', type: 'Server', status: 'Unknown' })
+  })
+})

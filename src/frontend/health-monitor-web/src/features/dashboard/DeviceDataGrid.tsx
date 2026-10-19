@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import type { ColumnDef, OnChangeFn, PaginationState, Updater } from '@tanstack/react-table'
-import { ReadApiError } from '../../api/readApi'
-import type { DevicePage, DeviceRow, ReadApi } from '../../api/readApi'
+import { deviceSites, deviceTypes, deviceHealthStates, ReadApiError } from '../../api/readApi'
+import type { DeviceHealth, DevicePage, DeviceRow, ReadApi } from '../../api/readApi'
 
 const columns: ColumnDef<DeviceRow>[] = [
   { accessorKey: 'displayName', header: 'Name' },
@@ -18,10 +18,11 @@ const columns: ColumnDef<DeviceRow>[] = [
 ]
 
 /** Applied search and paging change atomically; server response data belongs only to Query. */
-export type DeviceGridState = Readonly<{ pagination: PaginationState; q: string }>
+export type DeviceGridState = Readonly<{ pagination: PaginationState; q: string; site: string; type: string; status: DeviceHealth | '' }>
+type GridRequest = Omit<DeviceGridState, 'pagination'> & { page: number; pageSize: number }
 
 /** Equal page coordinates do not imply equal results: every input also identifies preserved responses. */
-function pageKey(origin: string, request: { page: number; pageSize: number; q: string }) {
+function pageKey(origin: string, request: GridRequest) {
   return ['devices', origin, { ...request, sort: 'displayName', direction: 'asc' }] as const
 }
 
@@ -34,12 +35,12 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
   state: DeviceGridState
   onStateChange: OnChangeFn<DeviceGridState>
 }) {
-  const { pagination, q } = state
+  const { pagination, q, site, type, status } = state
   // Draft editing never starts requests; only explicit submission changes the applied query.
   const [draft, setDraft] = useState(q)
   const [searchError, setSearchError] = useState('')
   const pollingEnabled = useDashboardPreferences(state => state.pollingEnabled)
-  const request = useMemo(() => ({ page: pagination.pageIndex + 1, pageSize: pagination.pageSize, q }), [pagination.pageIndex, pagination.pageSize, q])
+  const request = useMemo(() => ({ page: pagination.pageIndex + 1, pageSize: pagination.pageSize, q, site, type, status }), [pagination.pageIndex, pagination.pageSize, q, site, type, status])
   const [preservedIdentity, setPreservedIdentity] = useState(request)
   const query = useQuery({
     queryKey: pageKey(api.origin, request),
@@ -67,16 +68,16 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
   const correctingRange = !query.isPlaceholderData && currentIsPastLastPage
   const displayed = (currentIsPastLastPage ? undefined : current) ?? (pastLastPage(preserved.data) ? undefined : preserved.data)
   const displayedIdentity = current && !query.isPlaceholderData && !currentIsPastLastPage ? request : preservedIdentity
-  const showingPrevious = displayed !== undefined && (displayed.page !== request.page || displayed.pageSize !== request.pageSize || displayedIdentity.q !== request.q)
+  const showingPrevious = displayed !== undefined && !sameRequest(displayedIdentity, request)
   const busy = query.isFetching || correctingRange
 
   useEffect(() => {
     if (!query.isSuccess || query.isPlaceholderData || !current || current.items.length !== 0 || pagination.pageIndex <= lastValidIndex) return
     // A shrinking result set gets one correction to the last valid page, never an unbounded refetch loop.
     // The updater also rejects a stale correction if the user has already changed the request.
-    onStateChange(previous => previous.q === request.q && previous.pagination.pageIndex === current.page - 1 && previous.pagination.pageSize === current.pageSize
+    onStateChange(previous => sameRequest({ ...previous, page: previous.pagination.pageIndex + 1, pageSize: previous.pagination.pageSize }, request)
       ? { ...previous, pagination: { ...previous.pagination, pageIndex: lastValidIndex } } : previous)
-  }, [current, query.isSuccess, query.isPlaceholderData, pagination.pageIndex, lastValidIndex, request.q, onStateChange])
+  }, [current, query.isSuccess, query.isPlaceholderData, pagination.pageIndex, lastValidIndex, request, onStateChange])
 
   /** Retains exact displayed identity, including searches sharing the same page and size. */
   function changeState(updater: Updater<DeviceGridState>) {
@@ -93,7 +94,16 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
     // Match the API's post-trim UTF-16 limit without truncating literal user intent.
     if (next.length > 100) { setSearchError('Search must contain at most 100 characters after trimming.'); return }
     setSearchError(''); setDraft(next)
-    changeState(previous => ({ q: next, pagination: { ...previous.pagination, pageIndex: 0 } }))
+    changeState(previous => ({ ...previous, q: next, pagination: { ...previous.pagination, pageIndex: 0 } }))
+  }
+  /** Selects apply immediately to the applied search, never silently submitting draft text. */
+  function applyFilter(key: 'site' | 'type' | 'status', value: string) {
+    changeState(previous => ({ ...previous, [key]: value, pagination: { ...previous.pagination, pageIndex: 0 } }))
+  }
+  /** Resets both draft and applied intent so clearing cannot leave hidden search or filter state. */
+  function clearAllFilters() {
+    setDraft(''); setSearchError('')
+    changeState(previous => ({ q: '', site: '', type: '', status: '', pagination: { ...previous.pagination, pageIndex: 0 } }))
   }
   // Table requires a mutable array container; keep a stable adapter copy, not another server-state store.
   const rows = useMemo(() => displayed ? Array.from(displayed.items) : [], [displayed])
@@ -103,7 +113,7 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
     columns, data: rows, getCoreRowModel: getCoreRowModel(), getRowId: row => row.id,
     manualPagination: true, manualSorting: true, manualFiltering: true,
     enableSorting: false, enableColumnFilters: false,
-    state: { pagination, globalFilter: q }, onPaginationChange: changePagination,
+    state: { pagination, globalFilter: q, columnFilters: [{ id: 'siteCode', value: site }, { id: 'deviceType', value: type }, { id: 'health', value: status }].filter(filter => filter.value) }, onPaginationChange: changePagination,
     rowCount: displayed?.totalCount ?? 0,
   })
   const fetchedAt = displayed && !query.isPlaceholderData && !correctingRange && !showingPrevious ? query.dataUpdatedAt : preserved.dataUpdatedAt
@@ -129,19 +139,32 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
       <button type="button" onClick={() => applySearch('')} className="rounded border border-slate-300 bg-white px-4 py-2 focus-visible:outline-2 focus-visible:outline-sky-700">Clear search</button>
     </form>
     {searchError && <p role="alert">{searchError}</p>}
+    <div className="flex flex-wrap items-end gap-3">
+      <label className="text-sm font-semibold">Site <select aria-label="Site" value={site} onChange={event => applyFilter('site', event.target.value)} className="ml-2 rounded border border-slate-300 bg-white p-2 focus-visible:outline-2 focus-visible:outline-sky-700">
+        <option value="">All sites</option>{deviceSites.map(value => <option key={value} value={value}>{value}</option>)}
+      </select></label>
+      <label className="text-sm font-semibold">Type <select aria-label="Type" value={type} onChange={event => applyFilter('type', event.target.value)} className="ml-2 rounded border border-slate-300 bg-white p-2 focus-visible:outline-2 focus-visible:outline-sky-700">
+        <option value="">All types</option>{deviceTypes.map(value => <option key={value} value={value}>{value}</option>)}
+      </select></label>
+      <label className="text-sm font-semibold">Health <select aria-label="Health" value={status} onChange={event => applyFilter('status', event.target.value)} className="ml-2 rounded border border-slate-300 bg-white p-2 focus-visible:outline-2 focus-visible:outline-sky-700">
+        <option value="">All health states</option>{deviceHealthStates.map(value => <option key={value} value={value}>{value}</option>)}
+      </select></label>
+      <button type="button" onClick={clearAllFilters} className="rounded border border-slate-300 bg-white px-4 py-2 focus-visible:outline-2 focus-visible:outline-sky-700">Clear all filters</button>
+      <p className="text-xs text-slate-500">Filters combine with AND across all active devices. Fleet metrics stay global.</p>
+    </div>
     {(query.isPending || currentIsPastLastPage) && !displayed && <p role="status">Loading devices…</p>}
     {correctingRange && <p role="status">This page no longer exists. Loading the last available page…</p>}
     {showingPrevious && <p role="status" className="rounded-lg bg-sky-50 p-3 text-sm text-sky-950">
-      Showing previous page {displayed.page} ({displayed.pageSize} per page), {searchLabel(displayedIdentity.q)}. Requested page {request.page} ({request.pageSize} per page), {searchLabel(request.q)} {query.isError ? 'could not be loaded.' : 'is loading.'}
+      Showing previous page {displayed.page} ({displayed.pageSize} per page), {resultLabel(displayedIdentity)}. Requested page {request.page} ({request.pageSize} per page), {resultLabel(request)} {query.isError ? 'could not be loaded.' : 'is loading.'}
     </p>}
     {query.isError && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
       <p className="font-semibold">{displayed ? 'Device refresh failed. Displayed rows may be stale.' : 'Devices are unavailable.'}</p>
       <p>{query.error instanceof ReadApiError ? query.error.message : 'Device registrations could not be loaded.'}</p>
     </div>}
     {displayed && <>
-      <p className="text-sm text-slate-600">Displayed results: {searchLabel(displayedIdentity.q)}</p>
+      <p className="text-sm text-slate-600">Displayed results: {resultLabel(displayedIdentity)}</p>
       <p className="text-sm text-slate-600">{displayed.totalCount} matching active devices · {displayed.items.length} displayed on page {displayed.page}</p>
-      {displayed.totalCount === 0 ? <p role="status" className="rounded-xl border border-slate-200 bg-white p-5">{displayedIdentity.q ? 'No active devices match this search.' : 'No active devices.'}</p>
+      {displayed.totalCount === 0 ? <p role="status" className="rounded-xl border border-slate-200 bg-white p-5">{(displayedIdentity.q || displayedIdentity.site || displayedIdentity.type || displayedIdentity.status) ? 'No active devices match these filters.' : 'No active devices.'}</p>
         : <div role="region" aria-label="Device table, scroll horizontally if needed" tabIndex={0} className="overflow-x-auto rounded-xl border border-slate-200 bg-white focus-visible:outline-2 focus-visible:outline-sky-700">
           <table className="w-full min-w-240 text-left text-sm">
             <caption className="sr-only">Active device registrations</caption>
@@ -186,6 +209,13 @@ function pastLastPage(page: DevicePage | undefined): boolean {
 }
 
 /** Literal user text stays React text; it is never interpreted as markup or a filter expression. */
-function searchLabel(q: string): string {
-  return q ? `search “${q}”` : 'all active devices'
+function resultLabel({ q, site, type, status }: GridRequest): string {
+  const filters = [q ? `search “${q}”` : '', site ? `site ${site}` : '', type ? `type ${type}` : '', status ? `health ${status}` : ''].filter(Boolean)
+  return filters.length ? filters.join(' · ') : 'all active devices'
+}
+
+/** A stale response may affect neither navigation nor labels of another applied query at equal coordinates. */
+function sameRequest(left: GridRequest, right: GridRequest): boolean {
+  return left.page === right.page && left.pageSize === right.pageSize && left.q === right.q
+    && left.site === right.site && left.type === right.type && left.status === right.status
 }
