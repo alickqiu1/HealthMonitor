@@ -104,6 +104,15 @@ $inventories = @{
             Cancellation_ForwardsAndDrains = @('')
             Cors_PostOnlyExactOrigins = @('')
             SingleSubmission_GeneratesOnceAndSubsequentGetDoesNotRegenerate = @('')
+            Admission_InvalidRequests_DoNotConsumeBudget = @('')
+            Admission_ClientLimit_IgnoresSpoofedForwardingHeaders = @('')
+            Admission_GlobalLimit_UsesTrustedConnectionIdentity = @('')
+            Admission_Concurrency_DoesNotQueueOrReleaseOnClientAbort = @('')
+            Admission_DailyExhaustion_HasUtcRetryAndNoProviderCall = @('')
+            Admission_MissingOrCorruptCounter_FailsClosed = @('')
+            Admission_ProviderFailuresRemainChargedWithoutRetry = @('')
+            Admission_RestartPreservesCounter = @('')
+            Admission_ReadyThenGet_DoesNotRegenerate = @('')
         }
     }
     SimulationHost = @{

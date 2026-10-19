@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+using System.Net;
 using System.Collections.Concurrent;
 using HealthMonitor.Api.Composition;
 using HealthMonitor.Api.Controllers;
@@ -21,6 +23,8 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
 {
     private readonly FeatureFactory factory;
     private readonly RequestCompletion requests;
+    /// <summary>True only after independent completion of every admitted server pipeline, never merely after client disposal.</summary>
+    internal bool RequestsDrained { get; private set; }
     /// <summary>Owned TestServer client; each request has a ten-second outer timeout.</summary>
     internal HttpClient Client { get; }
     /// <summary>Admitted formatted diagnostics, including attached exceptions if a pipeline leaks one.</summary>
@@ -29,16 +33,21 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
     internal IServiceProvider Services => factory.Services;
 
     /// <summary>Starts the explicit feature WebHost without invoking the API entrypoint.</summary>
-    private ReadApiTestHost(Action<IServiceCollection> configure, bool providerSpecificBroadRule, IConfiguration simulationConfiguration, string environmentName)
+    private ReadApiTestHost(Action<IServiceCollection> configure, bool providerSpecificBroadRule, IConfiguration simulationConfiguration, string environmentName, Func<IPAddress?>? transportAddress)
     {
         Logs = new SafeReadLogs(); requests = new RequestCompletion();
-        factory = new FeatureFactory(configure, Logs, requests, providerSpecificBroadRule, simulationConfiguration, environmentName);
+        factory = new FeatureFactory(configure, Logs, requests, providerSpecificBroadRule, simulationConfiguration, environmentName, transportAddress);
         try
         {
             Client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
             Client.Timeout = TimeSpan.FromSeconds(10);
         }
-        catch { factory.Dispose(); throw; }
+        catch (Exception original)
+        {
+            try { factory.Dispose(); }
+            catch (Exception cleanup) { throw new AggregateException("Test host startup and cleanup failed.", original, cleanup); }
+            throw;
+        }
     }
 
     /// <summary>Registers only controlled fake ports, keeping local HTTP tests entirely database-free.</summary>
@@ -56,19 +65,31 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
     /// <param name="providerSpecificBroadRule">Whether a diagnostic test deliberately injects a broad conflicting rule.</param>
     /// <param name="simulationConfiguration">Explicit nonsecret simulator/CORS/AI settings only; omission keeps simulation disabled.</param>
     /// <param name="environmentName">Explicit test environment, never read from application settings or secrets.</param>
+    /// <param name="transportAddress">Optional test-only connection fact; null preserves ordinary transport behavior, never a header-derived identity.</param>
     /// <returns>Started caller-owned host; external sources/connections/transactions remain caller-owned.</returns>
     internal static Task<ReadApiTestHost> StartAsync(Action<IServiceCollection> configure, bool providerSpecificBroadRule = false,
-        IConfiguration? simulationConfiguration = null, string environmentName = "Testing") =>
+        IConfiguration? simulationConfiguration = null, string environmentName = "Testing", Func<IPAddress?>? transportAddress = null) =>
         Task.FromResult(new ReadApiTestHost(configure, providerSpecificBroadRule,
-            simulationConfiguration ?? new ConfigurationBuilder().Build(), environmentName));
+            simulationConfiguration ?? new ConfigurationBuilder().Build(), environmentName, transportAddress));
+
+    /// <summary>Observes one actual server pipeline by arrival index, independently of client cancellation or provider completion.</summary>
+    /// <param name="arrivalIndex">Zero-based registered arrival; tests establish ordering with provider-entry barriers.</param>
+    /// <returns>A ten-second assertion-bound wait; host disposal still independently drains all requests before cleanup.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The arrival has not been registered.</exception>
+    internal Task WaitForRequestCompletionAsync(int arrivalIndex) => requests.WaitForOneAsync(arrivalIndex);
 
     /// <summary>Stops client admission, independently drains server execution, then stops/disposes the factory before external database cleanup.</summary>
     /// <remarks>Client cancellation alone is not proof that a query stopped. Unresponsive server execution triggers the existing fail-stop deadline.</remarks>
     public async ValueTask DisposeAsync()
     {
-        Client.Dispose();
+        var failures = new List<Exception>();
+        try { Client.Dispose(); } catch (Exception error) { failures.Add(error); }
+        // Client disposal cannot bypass server draining. An unresolved drain fail-stops; never catch it as cleanup permission.
         await requests.StopAndDrainAsync();
-        await factory.DisposeAsync();
+        RequestsDrained = true;
+        try { await factory.DisposeAsync(); } catch (Exception error) { failures.Add(error); }
+        if (failures.Count == 1) ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        if (failures.Count > 1) throw new AggregateException("Test client and host cleanup failed after server drain.", failures);
     }
 
     /// <summary>Owns server completion barriers separately from possibly canceled HttpClient tasks.</summary>
@@ -88,6 +109,17 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                 work.Add(done.Task); return done;
             }
         }
+        /// <summary>Snapshots a registered completion under the gate; its timeout never grants permission to clean unresolved work.</summary>
+        internal Task WaitForOneAsync(int arrivalIndex)
+        {
+            Task completion;
+            lock (gate)
+            {
+                if (arrivalIndex < 0 || arrivalIndex >= work.Count) throw new ArgumentOutOfRangeException(nameof(arrivalIndex));
+                completion = work[arrivalIndex];
+            }
+            return completion.WaitAsync(TimeSpan.FromSeconds(10));
+        }
         /// <summary>Closes admission atomically and waits for every admitted server pipeline before any source/transaction can be disposed.</summary>
         internal Task StopAndDrainAsync()
         {
@@ -104,8 +136,9 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
     /// <param name="broadRule">Whether the logger-rule regression condition is enabled.</param>
     /// <param name="simulationConfiguration">Explicit nonsecret test flags and origins.</param>
     /// <param name="environmentName">Explicit test environment used by both host builders.</param>
+    /// <param name="transportAddress">Optional controlled connection address; never sourced from request headers.</param>
     private sealed class FeatureFactory(Action<IServiceCollection> configure, SafeReadLogs logs, RequestCompletion requests, bool broadRule,
-        IConfiguration simulationConfiguration, string environmentName)
+        IConfiguration simulationConfiguration, string environmentName, Func<IPAddress?>? transportAddress)
         : WebApplicationFactory<global::Program>
     {
         /// <inheritdoc />
@@ -136,7 +169,12 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                     {
                         var done = requests.Enter();
                         if (done is null) { context.Response.StatusCode = 503; return; }
-                        try { await next(); }
+                        try
+                        {
+                            // Keep the override inside completion tracking so even a faulty test callback cannot strand a request.
+                            if (transportAddress is not null) context.Connection.RemoteIpAddress = transportAddress();
+                            await next();
+                        }
                         finally { done.TrySetResult(); }
                     });
                     app.UseReadApiErrors(); app.UseRouting(); app.UseAiQueryNoStore();
