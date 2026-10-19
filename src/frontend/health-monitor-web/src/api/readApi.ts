@@ -1,3 +1,31 @@
+/** The canonical V1 health tokens; the browser never reclassifies server health. */
+export type DeviceHealth = 'Healthy' | 'Degraded' | 'Offline' | 'Unknown'
+
+/** A read projection, not a persistence entity. Offline rows can retain stale successful measurements. */
+export type DeviceRow = Readonly<{
+  id: string
+  assetTag: string
+  displayName: string
+  deviceType: string
+  siteCode: string
+  health: DeviceHealth
+  lastObservedAtUtc: string | null
+  latencyMs: number | null
+  cpuPercent: number | null
+}>
+
+/** API coordinates are one-based; the table translates its zero-based state at the call site. */
+export type DevicePageRequest = Readonly<{ page: number; pageSize: number }>
+
+/** One server page with a fleet result count; items are never treated as the entire inventory. */
+export type DevicePage = Readonly<{
+  items: readonly DeviceRow[]
+  page: number
+  pageSize: number
+  totalCount: number
+  asOfUtc: string
+}>
+
 /** The existing V1 fleet-wide summary. Missing latency is distinct from a measured zero. */
 export type MetricsSummary = Readonly<{
   total: number
@@ -40,48 +68,77 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
     throw new ReadApiError('The monitoring API connection is not configured correctly.')
   }
   const origin = url.origin
+
+  /** Shared transport for the two owned GET routes; no cache, retry policy or general HTTP framework is added. */
+  async function readJson(path: string, signal: AbortSignal, resource: 'summary' | 'devices'): Promise<unknown> {
+    signal.throwIfAborted()
+    let response: Response
+    try {
+      response = await fetcher(`${origin}${path}`, { signal, headers: { Accept: 'application/json' }, credentials: 'omit' })
+    } catch {
+      signal.throwIfAborted()
+      throw new ReadApiError('The monitoring API could not be reached.')
+    }
+    signal.throwIfAborted()
+    if (!response.ok) {
+      let code: string | null = null
+      if (response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'application/problem+json') {
+        try {
+          const problem: unknown = await response.json()
+          if (isRecord(problem) && typeof problem.code === 'string'
+            && ['validation_failed', 'fleet_capacity_exceeded', 'database_unavailable', 'unexpected_error'].includes(problem.code)) code = problem.code
+        } catch { signal.throwIfAborted() }
+      }
+      signal.throwIfAborted()
+      throw new ReadApiError(response.status === 503 ? 'Monitoring data is temporarily unavailable.'
+        : resource === 'summary' ? 'Fleet metrics could not be loaded.' : 'Device registrations could not be loaded.', response.status, code)
+    }
+    let body: unknown
+    try { body = await response.json() }
+    catch {
+      signal.throwIfAborted()
+      throw invalidPayload(resource)
+    }
+    signal.throwIfAborted()
+    return body
+  }
+
   return {
     origin,
     /**
-     * Consumes Query's cancellation signal so inactive requests cannot publish a later result.
-     * @param signal Query-owned cancellation, forwarded unchanged to fetch and checked before publishing parsed data.
-     * @returns The shape-checked summary, preserving explicit nulls and the server UTC timestamp.
-     * @throws ReadApiError for transport/HTTP/shape failures; cancellation preserves the caller's reason instead.
-     * No retry, request deadline or second cache is introduced at this boundary.
+     * Gets fleet-wide metrics without changing pagination or filters.
+     * @param signal Query-owned cancellation, forwarded unchanged and checked before publication.
+     * @returns A checked projection preserving nulls and the original server timestamp.
+     * @throws ReadApiError for transport/HTTP/shape failures; cancellation preserves the caller's reason.
      */
     async getMetrics(signal: AbortSignal): Promise<MetricsSummary> {
+      const body = await readJson('/api/v1/metrics/summary', signal, 'summary')
+      if (!isMetrics(body)) throw invalidPayload('summary')
+      return body
+    },
+    /**
+     * Gets one active-device page in the server's displayName ascending order; no local sorting or filtering occurs.
+     * @param request One-based page and capacity from 1 through 100.
+     * @param signal Query-owned cancellation; no deadline or retry is added here.
+     * @returns A checked page matching the requested coordinates, with stable catalog IDs and explicit nulls.
+     * @throws ReadApiError for invalid coordinates or invalid transport/response data, without echoing raw diagnostics.
+     */
+    async getDevices(request: DevicePageRequest, signal: AbortSignal): Promise<DevicePage> {
       signal.throwIfAborted()
-      let response: Response
-      try {
-        response = await fetcher(`${origin}/api/v1/metrics/summary`, { signal, headers: { Accept: 'application/json' }, credentials: 'omit' })
-      } catch {
-        signal.throwIfAborted()
-        throw new ReadApiError('The monitoring API could not be reached.')
-      }
-      signal.throwIfAborted()
-      if (!response.ok) {
-        let code: string | null = null
-        if (response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'application/problem+json') {
-          try {
-            const problem: unknown = await response.json()
-            if (isRecord(problem) && typeof problem.code === 'string'
-              && ['validation_failed', 'fleet_capacity_exceeded', 'database_unavailable', 'unexpected_error'].includes(problem.code)) code = problem.code
-          } catch { signal.throwIfAborted() }
-        }
-        signal.throwIfAborted()
-        throw new ReadApiError(response.status === 503 ? 'Monitoring data is temporarily unavailable.' : 'Fleet metrics could not be loaded.', response.status, code)
-      }
-      let body: unknown
-      try { body = await response.json() }
-      catch {
-        signal.throwIfAborted()
-        throw new ReadApiError('The monitoring API returned an invalid summary.')
-      }
-      signal.throwIfAborted()
-      if (!isMetrics(body)) throw new ReadApiError('The monitoring API returned an invalid summary.')
+      if (!request || !Number.isInteger(request.page) || request.page < 1 || request.page > 2_147_483_647
+        || !Number.isInteger(request.pageSize) || request.pageSize < 1 || request.pageSize > 100)
+        throw new ReadApiError('The device page request is invalid.')
+      const search = new URLSearchParams({ page: String(request.page), pageSize: String(request.pageSize), sort: 'displayName', direction: 'asc' })
+      const body = await readJson(`/api/v1/devices?${search}`, signal, 'devices')
+      if (!isDevicePage(body, request)) throw invalidPayload('devices')
       return body
     },
   }
+}
+
+/** Keeps invalid JSON/shape messages owned and consistent without exposing the rejected response. */
+function invalidPayload(resource: 'summary' | 'devices') {
+  return new ReadApiError(resource === 'summary' ? 'The monitoring API returned an invalid summary.' : 'The monitoring API returned an invalid device page.')
 }
 
 export type ReadApi = ReturnType<typeof createReadApi>
@@ -105,4 +162,23 @@ function isUtcInstant(value: unknown): value is string {
   const instant = Date.parse(value)
   // Preserve the original .NET tick precision while checking the calendar fields at JavaScript's millisecond resolution.
   return Number.isFinite(instant) && new Date(instant).toISOString().slice(0, 19) === value.slice(0, 19)
+}
+/** Checks page identity before caching: a response for another page must never be displayed under the requested key. */
+function isDevicePage(value: unknown, request: DevicePageRequest): value is DevicePage {
+  if (!isRecord(value) || value.page !== request.page || value.pageSize !== request.pageSize
+    || !Number.isSafeInteger(value.totalCount) || (value.totalCount as number) < 0 || !isUtcInstant(value.asOfUtc)
+    || !Array.isArray(value.items) || value.items.length > request.pageSize || value.items.length > (value.totalCount as number)
+    || !value.items.every(isDeviceRow)) return false
+  // Stable row identity requires unique UUIDs, including equivalent hexadecimal casing.
+  return new Set(value.items.map(row => row.id.toLowerCase())).size === value.items.length
+}
+
+/** Validates wire types and measurement units without deriving health or changing server-owned inventory facts. */
+function isDeviceRow(value: unknown): value is DeviceRow {
+  return isRecord(value) && typeof value.id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value.id)
+    && ['assetTag', 'displayName', 'deviceType', 'siteCode'].every(key => typeof value[key] === 'string')
+    && typeof value.health === 'string' && ['Healthy', 'Degraded', 'Offline', 'Unknown'].includes(value.health)
+    && (value.lastObservedAtUtc === null || isUtcInstant(value.lastObservedAtUtc))
+    && (value.latencyMs === null || (Number.isInteger(value.latencyMs) && (value.latencyMs as number) >= 0 && (value.latencyMs as number) <= 2_147_483_647))
+    && (value.cpuPercent === null || (typeof value.cpuPercent === 'number' && Number.isFinite(value.cpuPercent) && value.cpuPercent >= 0 && value.cpuPercent <= 100))
 }

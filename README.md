@@ -2,10 +2,11 @@
 
 HealthMonitor monitors a fictional infrastructure fleet using device registrations, simulated telemetry, health assessments and incident history. Its intended dashboard helps users find unhealthy devices and inspect their recent measurements and incidents.
 
-**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes a fleet-summary screen with refresh and failure states. The device grid and drawer remain planned; browser-to-live-API verification is still pending. AI translation is disabled in production composition.
+**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes fleet metrics and a server-paged device grid with refresh and failure states. Interactive filtering/sorting, the device drawer and AI interface remain planned. Verification evidence and remaining limits are recorded in the progress document. AI translation is disabled in production composition.
 
 ## Functionality
 
+- Read-only fleet metrics and device grid, with page-size choices, previous/next controls, page totals and explicit stale-data warnings.
 - Device catalog and fleet summary APIs, with validated filtering, sorting and pagination.
 - Per-device details, telemetry history and incident history.
 - Atomic telemetry ingestion with idempotency, incident lifecycle processing and concurrency safeguards.
@@ -19,7 +20,7 @@ All inventory and telemetry are synthetic. This application is not connected to 
 The backend is a .NET 10 modular application with a single ASP.NET Core facade:
 
 ```text
-React client — fleet summary; grid and drawer planned
+React client — fleet metrics and paged device grid; drawer planned
             |
 ASP.NET Core API — HTTP contracts and composition
             |
@@ -39,7 +40,7 @@ Device owns registrations; Telemetry owns measurements and incidents. Applicatio
 | `src/backend/HealthMonitor.Application` | Use cases, query contracts and ports |
 | `src/backend/HealthMonitor.Domain` | Domain rules and models |
 | `src/backend/HealthMonitor.Infrastructure` | PostgreSQL persistence and provider adapters |
-| `src/frontend/health-monitor-web` | React, TypeScript, Vite and Tailwind frontend; fleet-summary screen |
+| `src/frontend/health-monitor-web` | React, TypeScript, Vite and Tailwind frontend; fleet metrics and paged device grid |
 | `tests` | Backend unit, HTTP and isolated PostgreSQL tests |
 | `scripts` | Strict integration-result verification and its database-free self-tests |
 
@@ -92,4 +93,4 @@ Work proceeds in small increments with local checks and GitHub Actions verificat
 - [Technical Architecture Plan, Edition 1.5](docs/architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md): authoritative requirements, module boundaries, setup and operational procedures.
 - [AI provider decision](docs/development/AiProviderDecision.md): selected provider/model, rationale and remaining evaluation limits.
 
-The next visible application increments are the server-paged device grid and drawer on the existing read APIs. Remaining AI ingress, credential composition, counter provisioning and activation work stays open; resume it from the progress document rather than treating tested components as an enabled feature.
+The next visible application increments are global grid filtering/sorting and the device drawer on the existing read APIs. Remaining AI ingress, credential composition, counter provisioning and activation work stays open; resume it from the progress document rather than treating tested components as an enabled feature.
