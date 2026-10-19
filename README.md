@@ -80,7 +80,7 @@ The public read routes include `/api/v1/metrics/summary`, `/api/v1/devices`, and
 
 The owner did not personally write the application code. AI coding agents generated the implementation and tests. The owner helped organize the architecture plan and guided the first two development steps to establish the working method.
 
-Development then moved to separate AI working and read-only reviewer chats. The reviewer checks changes against the architecture and approved scope, requests corrections, and examines test evidence. The owner established and directs this workflow; AI source review is not human line-by-line code review.
+The owner then established separate AI development and read-only reviewer chats, both following the working method demonstrated in the first two steps. The reviewer checks the development thread's plans and implementation for errors and gaps, requests corrections, and examines test evidence. This is AI-assisted review, not human line-by-line code review.
 
 Work proceeds in small increments with local checks and GitHub Actions verification. The progress log distinguishes implementation, source review, local execution and CI evidence; these checks do not establish hosted production readiness.
 
