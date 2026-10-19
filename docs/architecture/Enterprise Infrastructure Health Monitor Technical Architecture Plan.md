@@ -10,6 +10,8 @@ The intended implementer is an experienced C# and industrial telemetry developer
 
 **Approved Step 2.A configuration amendment.** The owner approved minimal hybrid reconciliation: one canonical runtime setting, separate Development maintenance credentials, and the existing isolated CI selection. This supersedes the former Device/Telemetry connection-key examples in sections 6 and 10. D03's shared source, scoped contexts, module boundaries, one physical database, private schemas, separate histories, runtime privilege restrictions, and reviewed hosted SQL releases remain authoritative. Historical startup evidence below describes the earlier revision.
 
+**Owner-authorized AI provider portability amendment (19 October 2026).** The owner authorized AI implementation with Groq for their installation and preferred-LLM portability as a required capability. Retain one selected provider/model profile per installation, backend-only installation-owned credentials and the existing Application port. The initial implementation targets two explicitly supported profiles: Groq `openai/gpt-oss-20b` at `https://api.groq.com/openai/v1/chat/completions`, and OpenAI `gpt-5.4-mini-2026-03-17` at `https://api.openai.com/v1/chat/completions`. Groq remains the default. Each profile locks its canonical endpoint, model, request parameters and response model identity; unsupported combinations fail closed. This replaces the former global Groq-only endpoint/model lock with a lock per supported profile. It does not introduce arbitrary-provider compatibility, browser endpoint selection, runtime provider switching, automatic fallback or a provider framework. Different protocols require a reviewed adapter; additional compatible profiles require reviewed capability and safety tests. These are required implementation targets, not evidence of implemented or live-verified portability. All other D11 boundaries, usage limits and activation gates remain authoritative.
+
 Option A AI-generated structured queries is approved for the MVP and included in the eleven-step implementation roadmap. A user describes the desired device view in plain English; the model proposes a typed filter and sort object. The server validates it and the user applies it through the existing device-grid GET endpoint. EF Core and module query adapters remain responsible for database access. No free-form model SQL, new schema, third domain module, fifth production project, agent framework, or autonomous tool execution is introduced.
 
 This edition preserves sections 1–24, original models, bootstrap commands, persistence decisions, security controls, reference register, and the approved D11 AI feature introduced in edition 1.4. Edition 1.5 replaces the time-bound roadmap with eleven implementation steps and completion gates. Fixed day counts and working-hour budgets no longer govern delivery; scope and verification requirements remain. The original dependency baselines and their 12 October verification record are retained rather than represented as newly executed checks.
@@ -150,7 +152,7 @@ Add API/Controllers/AiDeviceQueriesController.cs and API/Contracts/V1/AiQueries 
 
 Application defines the provider port using immutable records and CancellationToken, without provider SDK, HTTP, EF, SQL, or API DTO dependencies. Infrastructure implements it with a bounded HttpClient integration or one reviewed provider SDK. The API maps public DTOs and supplies a small, nonsecret query vocabulary from the seed configuration through an application contract. AiQueries never references module entities, DbContexts, repositories, or write use cases; applying the validated query uses the existing facade read composition. Domain contains no AI types. No cross-schema query shortcut is permitted.
 
-Keep one provider and one model configuration for MVP. Do not introduce Semantic Kernel, multi-agent orchestration, vector search, conversation persistence, or a separate AI microservice. Provider/model and transport package versions must be selected and locked in Step 4; no specific provider is assumed implemented or approved by this plan.
+Keep one selected provider/model profile per installation for MVP. The 19 October 2026 portability amendment requires the two reviewed Groq/OpenAI profile targets above, with fixed endpoint/model identities and profile-specific parameters. Transport implementation and live verification remain separate evidence. Do not introduce Semantic Kernel, multi-agent orchestration, vector search, conversation persistence, or a separate AI microservice. Further profile/model changes require review rather than arbitrary endpoint or model overrides.
 
 # 3 Bootstrap prerequisites and version policy
 ### Windows prerequisites
@@ -334,7 +336,7 @@ npm run dev -- --port 5173 --strictPort
 Add .env*, node_modules/, dist/, .vs/, *.user, and local cert/secret paths to .gitignore; allow a placeholder .env.example. VITE_API_BASE_URL is public. Step 1 checks prerequisites, project loading, independent scaffold builds, and cloud TLS access. Migrations and seeded reads follow in Step 2; drawer, simulation, and browser CORS checks follow after frontend integration in Steps 7 and 8. The final solution contains four backend projects, two tests, and one esproj. [R15]
 
 ### Proposed AI configuration and secrets
-Store AiQueries:ApiKey only in API user-secrets or hosting secrets. The browser receives neither the key nor a provider endpoint. Commit only the disabled defaults in section 24. Configure the provider, model, and HTTPS base URL server-side, validate them at startup when enabled, and allowlist the intended provider host. No prompt or model field can override that host, configuration, or credentials.
+Store AiQueries:ApiKey only in API user-secrets or hosting secrets; each installation supplies its own account credentials. The browser receives neither the key nor a provider endpoint. Commit only the disabled defaults in section 24. Select AiQueries:Provider server-side (Groq by default, or OpenAI); the supported profile fixes its canonical HTTPS endpoint, model and request/response rules. Do not expose redundant Model/BaseUrl configuration keys or arbitrary URL overrides. Validate active configuration at startup; reject unsupported profiles and obsolete model/base-URL overrides. Disabled mode requires no provider secret lookup or counter I/O. No prompt or model field can override profile selection, endpoint, configuration or credentials.
 
 Do not send telemetry rows, asset names, addresses, database schema, connection strings, or repository code to the model. Send only the user prompt and fixed contract vocabulary: filter fields, enum tokens, supported site/type values, and sorting semantics. Label the prompt input for synthetic demo data only. Keep prompts and full provider outputs out of routine logs and persistent storage.
 
@@ -1175,14 +1177,12 @@ Pop-Location
 Integration tests require the isolated PostgreSQL fixture; never point them at the hosted demonstration database. The Playwright journey additionally requires its configured API/SPA startup fixture and installed browser. Automated bootstrap/CI scripts must check each native exit code and stop on failure. Visual Studio startup settings, test fixtures, business code, initial seeding, and hosting configuration are explicit implementation tasks rather than silently omitted scaffold commands.
 
 ### Proposed nonsecret AI defaults
-Merge this additional top-level block into section 24 appsettings.json; keep existing defaults unchanged. Startup validates the provider/model/host and secret when enabled. None of these defaults enables the AI route by itself.
+Merge this additional top-level block into section 24 appsettings.json; keep existing defaults unchanged. Startup validates the selected fixed provider profile and secret when enabled. None of these defaults enables the AI route by itself.
 ```json
 {
   "AiQueries": {
     "Enabled": false,
-    "Provider": "",
-    "Model": "",
-    "BaseUrl": "",
+    "Provider": "Groq",
     "TimeoutSeconds": 10,
     "MaxPromptCharacters": 500,
     "MaxRequestBodyBytes": 8192,
