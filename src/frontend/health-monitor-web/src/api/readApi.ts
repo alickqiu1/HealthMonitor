@@ -19,8 +19,12 @@ export const deviceSites = ['EDM', 'CGY', 'DEN'] as const
 export const deviceTypes = ['Server', 'Database', 'Gateway', 'SCADA'] as const
 export const deviceHealthStates = ['Healthy', 'Degraded', 'Offline', 'Unknown'] as const satisfies readonly DeviceHealth[]
 
+/** Exact V1 sort capabilities; the server owns severity, numeric/null ordering and UUID tie-breakers. */
+export const deviceSortKeys = ['displayName', 'assetTag', 'siteCode', 'status', 'lastObservedAtUtc', 'latencyMs', 'cpuPercent'] as const
+export type DeviceSort = typeof deviceSortKeys[number]
+
 /** API coordinates are one-based; the table translates its zero-based state at the call site. */
-export type DevicePageRequest = Readonly<{ page: number; pageSize: number; q?: string; site?: string; type?: string; status?: DeviceHealth | '' }>
+export type DevicePageRequest = Readonly<{ page: number; pageSize: number; q?: string; site?: string; type?: string; status?: DeviceHealth | ''; sort?: DeviceSort; direction?: 'asc' | 'desc' }>
 
 /** One server page with a fleet result count; items are never treated as the entire inventory. */
 export type DevicePage = Readonly<{
@@ -122,11 +126,11 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
       return body
     },
     /**
-     * Gets one globally searched page in displayName ascending order; no local filtering occurs.
-     * @param request One-based page, capacity 1..100, optional literal name/tag search (100 UTF-16 units after trimming), and canonical AND filters. Empty filter values are neutral.
+     * Gets one globally filtered/sorted page; the server owns ordering and no local row processing occurs.
+     * @param request One-based page, capacity 1..100, optional literal name/tag search (100 UTF-16 units after trimming), and canonical AND filters. Empty filter values are neutral; sort defaults to displayName/asc.
      * @param signal Query-owned cancellation; no deadline or retry is added here.
      * @returns A checked page matching the requested coordinates, with stable catalog IDs and explicit nulls.
-     * @throws ReadApiError for invalid coordinates or invalid transport/response data, without echoing raw diagnostics.
+     * @throws ReadApiError for invalid coordinates/filter/sort input or invalid transport/response data, without echoing raw diagnostics.
      */
     async getDevices(request: DevicePageRequest, signal: AbortSignal): Promise<DevicePage> {
       signal.throwIfAborted()
@@ -136,7 +140,9 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
       if (request.q !== undefined && typeof request.q !== 'string') throw new ReadApiError('The device search is invalid.')
       const q = request.q?.trim() ?? ''
       if (q.length > 100) throw new ReadApiError('The device search must contain at most 100 characters after trimming.')
-      const search = new URLSearchParams({ page: String(request.page), pageSize: String(request.pageSize), sort: 'displayName', direction: 'asc' })
+      const sort = request.sort === undefined ? 'displayName' : request.sort; const direction = request.direction === undefined ? 'asc' : request.direction
+      if (!(deviceSortKeys as readonly string[]).includes(sort) || !['asc', 'desc'].includes(direction)) throw new ReadApiError('The device sort is invalid.')
+      const search = new URLSearchParams({ page: String(request.page), pageSize: String(request.pageSize), sort, direction })
       if (q) search.set('q', q)
       // Validate even typed callers at the public transport boundary; neutral options are omitted, not blank tokens.
       for (const [key, value, supported] of [

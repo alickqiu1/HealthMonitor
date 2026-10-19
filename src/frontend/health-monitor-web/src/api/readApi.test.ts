@@ -172,3 +172,20 @@ describe('canonical server device filters', () => {
     expect(Object.fromEntries(new URL(String(fetcher.mock.calls[0][0])).searchParams)).toEqual({ page: '1', pageSize: '25', sort: 'displayName', direction: 'asc', q: 'EDM & 1', site: 'EDM', type: 'Server', status: 'Unknown' })
   })
 })
+
+
+describe('allowlisted server device sorting', () => {
+  it.each(['displayName', 'assetTag', 'siteCode', 'status', 'lastObservedAtUtc', 'latencyMs', 'cpuPercent'] as const)('passes both directions of %s without processing rows', async sort => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => json(page()))
+    const api = createReadApi('https://example.test', fetcher)
+    for (const direction of ['asc', 'desc'] as const) {
+      await api.getDevices({ page: 1, pageSize: 25, sort, direction }, new AbortController().signal)
+      expect(Object.fromEntries(new URL(String(fetcher.mock.calls.at(-1)![0])).searchParams)).toMatchObject({ sort, direction })
+    }
+  })
+  it.each([{ sort: 'deviceType' }, { sort: 'health' }, { sort: 'Name' }, { sort: null }, { direction: 'ASC' }, { direction: '' }, { direction: null }])('rejects unsupported sort input %# before HTTP', async invalid => {
+    const fetcher = vi.fn<typeof fetch>()
+    await expect(createReadApi('https://example.test', fetcher).getDevices({ page: 1, pageSize: 25, ...invalid } as never, new AbortController().signal)).rejects.toBeInstanceOf(ReadApiError)
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+})

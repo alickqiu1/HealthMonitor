@@ -28,7 +28,7 @@ function pageResponse(page: number, pageSize = 25, totalCount = 60, items: unkno
 }
 /** Models the dashboard's one applied-query owner without storing response rows in React state. */
 function Harness({ fetcher, initial }: { fetcher: typeof fetch; initial: PaginationState }) {
-  const [state, setState] = useState<DeviceGridState>({ pagination: initial, q: '', site: '', type: '', status: '' })
+  const [state, setState] = useState<DeviceGridState>({ pagination: initial, q: '', site: '', type: '', status: '', sorting: [{ id: 'displayName', desc: false }] })
   return <DeviceDataGrid api={createReadApi('https://example.test', fetcher)} state={state} onStateChange={setState} />
 }
 /** Each case gets an isolated real Query cache; a zero GC delay exposes missing observer ownership. */
@@ -47,7 +47,7 @@ it('renders semantic server rows, stable inventory identity, zero measurements a
   const table = await screen.findByRole('table', { name: 'Active device registrations' })
   expect(within(table).getByText('Device 1')).toBeTruthy(); expect(within(table).getByText('DEV-1')).toBeTruthy()
   expect(within(table).getByText('Offline')).toBeTruthy(); expect(within(table).getByText('0 ms')).toBeTruthy(); expect(within(table).getByText('0%')).toBeTruthy()
-  expect(within(table).getByRole('columnheader', { name: 'Name' }).getAttribute('aria-sort')).toBe('ascending')
+  expect(within(table).getByRole('columnheader', { name: /Name/ }).getAttribute('aria-sort')).toBe('ascending')
   expect(screen.getByRole('region', { name: /Device table/ }).tabIndex).toBe(0)
   expect(screen.getByText(/60 matching active devices/)).toBeTruthy()
   expect(screen.getByText(/Offline rows can retain older/)).toBeTruthy()
@@ -430,12 +430,13 @@ it('searches and paginates while paused without refetching or filtering global m
   await screen.findByText('42'); await screen.findByText('Device 1')
   search('DEV'); await screen.findByText('Displayed results: search “DEV”')
   filter('Site', 'EDM'); await screen.findByText('Displayed results: search “DEV” · site EDM')
+  sortBy('CPU'); await waitFor(() => expect(screen.getByRole('button', { name: 'Sort by CPU descending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending'))
   fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await screen.findByText('Device 2')
   await act(async () => { await client.invalidateQueries({ queryKey: ['devices'] }) })
   const calls = fetcher.mock.calls.map(([input]) => new URL(String(input)))
   expect(calls.filter(url => url.pathname.endsWith('/metrics/summary'))).toHaveLength(1)
-  expect(calls.filter(url => url.pathname.endsWith('/devices')).map(url => [url.searchParams.get('q'), url.searchParams.get('page')])).toEqual([[null, '1'], ['DEV', '1'], ['DEV', '1'], ['DEV', '2'], ['DEV', '2']])
-  expect(calls.at(-1)?.searchParams.get('site')).toBe('EDM')
+  expect(calls.filter(url => url.pathname.endsWith('/devices')).map(url => [url.searchParams.get('q'), url.searchParams.get('page')])).toEqual([[null, '1'], ['DEV', '1'], ['DEV', '1'], ['DEV', '1'], ['DEV', '2'], ['DEV', '2']])
+  expect(calls.at(-1)?.searchParams.get('site')).toBe('EDM'); expect(calls.at(-1)?.searchParams.get('sort')).toBe('cpuPercent')
   expect(screen.getByText('42')).toBeTruthy(); expect(screen.getByText('Paused')).toBeTruthy()
 })
 
@@ -529,4 +530,94 @@ it('ignores a superseded filter page completion without moving a different filte
   expect(screen.getByText('Displayed results: site CGY')).toBeTruthy()
   expect(oldSignal.aborted).toBe(true)
   expect(filterRequests(fetcher).at(-1)).toMatchObject({ site: 'CGY', page: '2' })
+})
+
+
+/** Header activation uses a native button with an explicit next action, not private Table mutation. */
+function sortBy(name: string, direction: 'ascending' | 'descending' = 'ascending') {
+  fireEvent.click(screen.getByRole('button', { name: `Sort by ${name} ${direction}` }))
+}
+
+it('maps all seven supported headers to server sort, toggles one direction, and keeps Type unsortable', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async input => pageResponse(Number(new URL(String(input)).searchParams.get('page'))))
+  mount(fetcher); await screen.findByText('Device 1')
+  expect(screen.queryByRole('button', { name: /Sort by Type/ })).toBeNull()
+  for (const [name, key] of [['Asset tag', 'assetTag'], ['Site', 'siteCode'], ['Health', 'status'], ['Last observed (UTC)', 'lastObservedAtUtc'], ['Latency', 'latencyMs'], ['CPU', 'cpuPercent'], ['Name', 'displayName']]) {
+    sortBy(name)
+    await waitFor(() => expect(filterRequests(fetcher).at(-1)).toMatchObject({ sort: key, direction: 'asc', page: '1' }))
+    await waitFor(() => expect((screen.getByRole('button', { name: `Sort by ${name} descending` }).closest('th'))?.getAttribute('aria-sort')).toBe('ascending'))
+    sortBy(name, 'descending')
+    await waitFor(() => expect(filterRequests(fetcher).at(-1)).toMatchObject({ sort: key, direction: 'desc' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: `Sort by ${name} ascending` }).closest('th')?.getAttribute('aria-sort')).toBe('descending'))
+    expect(screen.getAllByRole('columnheader').filter(header => header.hasAttribute('aria-sort'))).toHaveLength(1)
+  }
+})
+
+it('resets page but preserves size and all filters on sort; Clear search preserves sort and Clear all restores default order', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async input => pageResponse(Number(new URL(String(input)).searchParams.get('page')), 10, 60))
+  mount(fetcher, { pageIndex: 0, pageSize: 10 }); await screen.findByText('Device 1')
+  search('DEV'); await screen.findByText('Displayed results: search “DEV”')
+  filter('Site', 'EDM'); await screen.findByText('Displayed results: search “DEV” · site EDM')
+  filter('Type', 'Server'); await screen.findByText('Displayed results: search “DEV” · site EDM · type Server')
+  filter('Health', 'Unknown'); await screen.findByText('Displayed results: search “DEV” · site EDM · type Server · health Unknown')
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await screen.findByText('Device 2')
+  sortBy('CPU'); await screen.findByText('Device 1')
+  expect(filterRequests(fetcher).at(-1)).toMatchObject({ q: 'DEV', site: 'EDM', type: 'Server', status: 'Unknown', sort: 'cpuPercent', direction: 'asc', page: '1', pageSize: '10' })
+  fireEvent.click(screen.getByRole('button', { name: 'Clear search' })); await screen.findByText('Displayed results: site EDM · type Server · health Unknown')
+  expect(filterRequests(fetcher).at(-1)).toMatchObject({ sort: 'cpuPercent', direction: 'asc' })
+  fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' })); await screen.findByText('Displayed results: all active devices')
+  expect(screen.getByRole('button', { name: 'Sort by Name descending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending')
+  expect(screen.getByText(/Clear all filters also restores Name ascending/)).toBeTruthy()
+})
+
+it('keeps displayed aria-sort/count/time and labels through pending/failed sort while buttons describe requested actions', async () => {
+  let fail!: (error: Error) => void
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(pageResponse(1))
+    .mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+    .mockResolvedValueOnce(pageResponse(1, 25, 60, [{ ...row(5), displayName: 'Server ordered row' }]))
+  mount(fetcher); await screen.findByText('Device 1')
+  const time = screen.getByText(/Device fetch/).querySelector('time')?.dateTime
+  sortBy('Latency')
+  expect(await screen.findByText(/Showing previous page 1 .*Name ascending.*Requested page 1 .*Latency ascending/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Sort by Name ascending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending')
+  expect(screen.getByRole('button', { name: 'Sort by Latency descending' }).closest('th')?.hasAttribute('aria-sort')).toBe(false)
+  await act(async () => fail(new Error('private sort failure'))); await screen.findByRole('alert')
+  expect(screen.getByRole('button', { name: 'Sort by Name ascending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending')
+  expect(screen.getByText('Page 1 of 3')).toBeTruthy()
+  expect(screen.getByText(/Device fetch/).querySelector('time')?.dateTime).toBe(time)
+  fireEvent.click(screen.getByRole('button', { name: 'Retry devices' })); await screen.findByText('Server ordered row')
+  expect(screen.getByRole('button', { name: 'Sort by Latency descending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending')
+  expect(screen.getByRole('button', { name: 'Sort by Name ascending' }).closest('th')?.hasAttribute('aria-sort')).toBe(false)
+  expect(filterRequests(fetcher).map(request => request.sort)).toEqual(['displayName', 'latencyMs', 'latencyMs'])
+})
+
+it('preserves server row order for numbers, nulls and health without installing a browser sorting model', async () => {
+  // Deliberately surprising fixture order proves delegation; backend comparator tests prove semantic ordering.
+  const items = [{ ...row(1), displayName: 'High', cpuPercent: 90, health: 'Healthy' }, { ...row(2), displayName: 'Absent', cpuPercent: null, health: 'Unknown' }, { ...row(3), displayName: 'Low', cpuPercent: 1, health: 'Offline' }]
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async input => pageResponse(1, 25, 3, new URL(String(input)).searchParams.get('direction') === 'desc' ? [...items].reverse() : items))
+  mount(fetcher); await screen.findByText('High')
+  sortBy('CPU'); await waitFor(() => expect(screen.getByRole('button', { name: 'Sort by CPU descending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending'))
+  const names = () => screen.getAllByRole('row').slice(1).map(row => within(row).getAllByRole('cell')[0].textContent)
+  expect(names()).toEqual(['High', 'Absent', 'Low'])
+  sortBy('CPU', 'descending'); await waitFor(() => expect(names()).toEqual(['Low', 'Absent', 'High']))
+  sortBy('Health'); await waitFor(() => expect(filterRequests(fetcher).at(-1)?.sort).toBe('status'))
+  await waitFor(() => expect(names()).toEqual(['High', 'Absent', 'Low']))
+})
+
+it('ignores late sort range results at equal coordinates without changing the new order or its page', async () => {
+  let finish!: (response: Response) => void
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(input => {
+    const query = new URL(String(input)).searchParams; const page = Number(query.get('page'))
+    if (query.get('sort') === 'latencyMs' && page === 2) return new Promise(resolve => { finish = resolve })
+    return Promise.resolve(pageResponse(page, 25, 60))
+  })
+  mount(fetcher); await screen.findByText('Device 1')
+  sortBy('Latency'); await waitFor(() => expect(screen.getByRole('button', { name: 'Sort by Latency descending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending'))
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await waitFor(() => expect(finish).toBeTypeOf('function'))
+  sortBy('CPU'); await waitFor(() => expect(screen.getByRole('button', { name: 'Sort by CPU descending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending'))
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await screen.findByText('Page 2 of 3')
+  await act(async () => finish(pageResponse(2, 25, 0, [])))
+  expect(screen.getByText('Page 2 of 3')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Sort by CPU descending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending')
+  expect(filterRequests(fetcher).at(-1)).toMatchObject({ sort: 'cpuPercent', page: '2' })
 })

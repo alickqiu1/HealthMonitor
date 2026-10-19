@@ -2,15 +2,15 @@ import { useDashboardPreferences } from './dashboardPreferences'
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
-import type { ColumnDef, OnChangeFn, PaginationState, Updater } from '@tanstack/react-table'
+import type { ColumnDef, OnChangeFn, PaginationState, SortingState, Updater } from '@tanstack/react-table'
 import { deviceSites, deviceTypes, deviceHealthStates, ReadApiError } from '../../api/readApi'
-import type { DeviceHealth, DevicePage, DeviceRow, ReadApi } from '../../api/readApi'
+import type { DeviceHealth, DeviceSort, DevicePage, DeviceRow, ReadApi } from '../../api/readApi'
 
 const columns: ColumnDef<DeviceRow>[] = [
   { accessorKey: 'displayName', header: 'Name' },
   { accessorKey: 'assetTag', header: 'Asset tag' },
   { accessorKey: 'siteCode', header: 'Site' },
-  { accessorKey: 'deviceType', header: 'Type' },
+  { accessorKey: 'deviceType', header: 'Type', enableSorting: false },
   { accessorKey: 'health', header: 'Health' },
   { accessorKey: 'latencyMs', header: 'Latency', cell: context => context.row.original.latencyMs === null ? '—' : `${context.row.original.latencyMs} ms` },
   { accessorKey: 'cpuPercent', header: 'CPU', cell: context => context.row.original.cpuPercent === null ? '—' : `${context.row.original.cpuPercent}%` },
@@ -18,12 +18,24 @@ const columns: ColumnDef<DeviceRow>[] = [
 ]
 
 /** Applied search and paging change atomically; server response data belongs only to Query. */
-export type DeviceGridState = Readonly<{ pagination: PaginationState; q: string; site: string; type: string; status: DeviceHealth | '' }>
-type GridRequest = Omit<DeviceGridState, 'pagination'> & { page: number; pageSize: number }
+export type DeviceGridState = Readonly<{ pagination: PaginationState; q: string; site: string; type: string; status: DeviceHealth | ''; sorting: SortingState }>
+type GridRequest = Omit<DeviceGridState, 'pagination' | 'sorting'> & { page: number; pageSize: number; sort: DeviceSort; direction: 'asc' | 'desc' }
+
+/** UI field names never become unchecked API sort keys; Type deliberately has no mapping. */
+const sortColumns: Readonly<Record<string, DeviceSort | undefined>> = {
+  displayName: 'displayName', assetTag: 'assetTag', siteCode: 'siteCode', health: 'status',
+  lastObservedAtUtc: 'lastObservedAtUtc', latencyMs: 'latencyMs', cpuPercent: 'cpuPercent',
+}
+/** Maps the dashboard's single controlled sort to wire identity, also used to reject stale corrections. */
+function requestFor({ pagination, q, site, type, status, sorting }: DeviceGridState): GridRequest {
+  const sort = sorting[0] ?? { id: 'displayName', desc: false }
+  return { page: pagination.pageIndex + 1, pageSize: pagination.pageSize, q, site, type, status,
+    sort: sortColumns[sort.id] ?? 'displayName', direction: sort.desc ? 'desc' : 'asc' }
+}
 
 /** Equal page coordinates do not imply equal results: every input also identifies preserved responses. */
 function pageKey(origin: string, request: GridRequest) {
-  return ['devices', origin, { ...request, sort: 'displayName', direction: 'asc' }] as const
+  return ['devices', origin, request] as const
 }
 
 /**
@@ -35,12 +47,12 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
   state: DeviceGridState
   onStateChange: OnChangeFn<DeviceGridState>
 }) {
-  const { pagination, q, site, type, status } = state
+  const { pagination, q, site, type, status, sorting } = state
   // Draft editing never starts requests; only explicit submission changes the applied query.
   const [draft, setDraft] = useState(q)
   const [searchError, setSearchError] = useState('')
   const pollingEnabled = useDashboardPreferences(state => state.pollingEnabled)
-  const request = useMemo(() => ({ page: pagination.pageIndex + 1, pageSize: pagination.pageSize, q, site, type, status }), [pagination.pageIndex, pagination.pageSize, q, site, type, status])
+  const request = useMemo(() => requestFor(state), [state])
   const [preservedIdentity, setPreservedIdentity] = useState(request)
   const query = useQuery({
     queryKey: pageKey(api.origin, request),
@@ -67,6 +79,7 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
   const currentIsPastLastPage = pastLastPage(current)
   const correctingRange = !query.isPlaceholderData && currentIsPastLastPage
   const displayed = (currentIsPastLastPage ? undefined : current) ?? (pastLastPage(preserved.data) ? undefined : preserved.data)
+  // aria-sort describes the retained rows; header actions describe the requested sort until new rows arrive.
   const displayedIdentity = current && !query.isPlaceholderData && !currentIsPastLastPage ? request : preservedIdentity
   const showingPrevious = displayed !== undefined && !sameRequest(displayedIdentity, request)
   const busy = query.isFetching || correctingRange
@@ -75,7 +88,7 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
     if (!query.isSuccess || query.isPlaceholderData || !current || current.items.length !== 0 || pagination.pageIndex <= lastValidIndex) return
     // A shrinking result set gets one correction to the last valid page, never an unbounded refetch loop.
     // The updater also rejects a stale correction if the user has already changed the request.
-    onStateChange(previous => sameRequest({ ...previous, page: previous.pagination.pageIndex + 1, pageSize: previous.pagination.pageSize }, request)
+    onStateChange(previous => sameRequest(requestFor(previous), request)
       ? { ...previous, pagination: { ...previous.pagination, pageIndex: lastValidIndex } } : previous)
   }, [current, query.isSuccess, query.isPlaceholderData, pagination.pageIndex, lastValidIndex, request, onStateChange])
 
@@ -103,7 +116,15 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
   /** Resets both draft and applied intent so clearing cannot leave hidden search or filter state. */
   function clearAllFilters() {
     setDraft(''); setSearchError('')
-    changeState(previous => ({ q: '', site: '', type: '', status: '', pagination: { ...previous.pagination, pageIndex: 0 } }))
+    changeState(previous => ({ q: '', site: '', type: '', status: '', sorting: [{ id: 'displayName', desc: false }], pagination: { ...previous.pagination, pageIndex: 0 } }))
+  }
+  /** A single allowlisted sort changes atomically with the page reset; no client sorting row model runs. */
+  function changeSorting(updater: Updater<SortingState>) {
+    changeState(previous => {
+      const next = typeof updater === 'function' ? updater(previous.sorting) : updater
+      if (next.length !== 1 || !sortColumns[next[0].id]) return previous
+      return { ...previous, sorting: next, pagination: { ...previous.pagination, pageIndex: 0 } }
+    })
   }
   // Table requires a mutable array container; keep a stable adapter copy, not another server-state store.
   const rows = useMemo(() => displayed ? Array.from(displayed.items) : [], [displayed])
@@ -112,8 +133,8 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
   const table = useReactTable({
     columns, data: rows, getCoreRowModel: getCoreRowModel(), getRowId: row => row.id,
     manualPagination: true, manualSorting: true, manualFiltering: true,
-    enableSorting: false, enableColumnFilters: false,
-    state: { pagination, globalFilter: q, columnFilters: [{ id: 'siteCode', value: site }, { id: 'deviceType', value: type }, { id: 'health', value: status }].filter(filter => filter.value) }, onPaginationChange: changePagination,
+    enableSorting: true, enableMultiSort: false, maxMultiSortColCount: 1, enableSortingRemoval: false, sortDescFirst: false, enableColumnFilters: false,
+    state: { pagination, sorting, globalFilter: q, columnFilters: [{ id: 'siteCode', value: site }, { id: 'deviceType', value: type }, { id: 'health', value: status }].filter(filter => filter.value) }, onPaginationChange: changePagination, onSortingChange: changeSorting,
     rowCount: displayed?.totalCount ?? 0,
   })
   const fetchedAt = displayed && !query.isPlaceholderData && !correctingRange && !showingPrevious ? query.dataUpdatedAt : preserved.dataUpdatedAt
@@ -123,7 +144,7 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
   return <section aria-labelledby="devices-title" className="space-y-4">
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><h2 id="devices-title" className="text-2xl font-semibold tracking-tight">Devices</h2>
-        <p className="mt-1 text-sm text-slate-600">Active registrations · Server order: name ascending</p></div>
+        <p className="mt-1 text-sm text-slate-600">Active registrations · Order requested: {sortLabel(request)}</p></div>
       <button type="button" disabled={busy} onClick={() => void query.refetch({ cancelRefetch: false })}
         className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 disabled:opacity-50">
         {query.isError ? 'Retry devices' : 'Refresh devices'}
@@ -149,13 +170,16 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
       <label className="text-sm font-semibold">Health <select aria-label="Health" value={status} onChange={event => applyFilter('status', event.target.value)} className="ml-2 rounded border border-slate-300 bg-white p-2 focus-visible:outline-2 focus-visible:outline-sky-700">
         <option value="">All health states</option>{deviceHealthStates.map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
-      <button type="button" onClick={clearAllFilters} className="rounded border border-slate-300 bg-white px-4 py-2 focus-visible:outline-2 focus-visible:outline-sky-700">Clear all filters</button>
+      <button type="button" onClick={clearAllFilters} className="rounded border border-slate-300 bg-white px-4 py-2 focus-visible:outline-2 focus-visible:outline-sky-700" aria-describedby="filter-reset-note">Clear all filters</button>
       <p className="text-xs text-slate-500">Filters combine with AND across all active devices. Fleet metrics stay global.</p>
+      <p id="filter-reset-note" className="text-xs text-slate-500">Clear all filters also restores Name ascending.</p>
+      <p className="text-xs text-slate-500">Header arrows show the requested order. Rows keep their previous order until the new results load.</p>
+      <p className="text-xs text-slate-500">Health order: Offline, Degraded, Unknown, Healthy (ascending); missing values stay last in either direction.</p>
     </div>
     {(query.isPending || currentIsPastLastPage) && !displayed && <p role="status">Loading devices…</p>}
     {correctingRange && <p role="status">This page no longer exists. Loading the last available page…</p>}
     {showingPrevious && <p role="status" className="rounded-lg bg-sky-50 p-3 text-sm text-sky-950">
-      Showing previous page {displayed.page} ({displayed.pageSize} per page), {resultLabel(displayedIdentity)}. Requested page {request.page} ({request.pageSize} per page), {resultLabel(request)} {query.isError ? 'could not be loaded.' : 'is loading.'}
+      Showing previous page {displayed.page} ({displayed.pageSize} per page), {resultLabel(displayedIdentity)}, {sortLabel(displayedIdentity)}. Requested page {request.page} ({request.pageSize} per page), {resultLabel(request)}, {sortLabel(request)} {query.isError ? 'could not be loaded.' : 'is loading.'}
     </p>}
     {query.isError && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
       <p className="font-semibold">{displayed ? 'Device refresh failed. Displayed rows may be stale.' : 'Devices are unavailable.'}</p>
@@ -169,8 +193,12 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
           <table className="w-full min-w-240 text-left text-sm">
             <caption className="sr-only">Active device registrations</caption>
             <thead className="border-b border-slate-200 bg-slate-100 text-xs text-slate-600">
-              {table.getHeaderGroups().map(group => <tr key={group.id}>{group.headers.map(header => <th key={header.id} scope="col" aria-sort={header.column.id === 'displayName' ? 'ascending' : undefined} className="whitespace-nowrap px-4 py-3 font-semibold">
-                {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+              {table.getHeaderGroups().map(group => <tr key={group.id}>{group.headers.map(header => <th key={header.id} scope="col" aria-sort={sortColumns[header.column.id] === displayedIdentity.sort ? (displayedIdentity.direction === 'asc' ? 'ascending' : 'descending') : undefined} className="whitespace-nowrap px-4 py-3 font-semibold">
+                {header.isPlaceholder ? null : header.column.getCanSort() ? <button type="button" onClick={header.column.getToggleSortingHandler()}
+                  aria-label={`Sort by ${header.column.columnDef.header} ${header.column.getIsSorted() === 'asc' ? 'descending' : 'ascending'}`}
+                  className="rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700">
+                  {flexRender(header.column.columnDef.header, header.getContext())}<span aria-hidden="true">{header.column.getIsSorted() === 'asc' ? ' ↑' : header.column.getIsSorted() === 'desc' ? ' ↓' : ''}</span>
+                </button> : flexRender(header.column.columnDef.header, header.getContext())}
               </th>)}</tr>)}
             </thead>
             <tbody>{table.getRowModel().rows.map(row => <tr key={row.id} className="border-b border-slate-100 last:border-0">
@@ -218,4 +246,11 @@ function resultLabel({ q, site, type, status }: GridRequest): string {
 function sameRequest(left: GridRequest, right: GridRequest): boolean {
   return left.page === right.page && left.pageSize === right.pageSize && left.q === right.q
     && left.site === right.site && left.type === right.type && left.status === right.status
+    && left.sort === right.sort && left.direction === right.direction
+}
+
+/** Sort vocabulary describes server behavior without reimplementing comparisons in the browser. */
+function sortLabel({ sort, direction }: GridRequest): string {
+  const names = { displayName: 'Name', assetTag: 'Asset tag', siteCode: 'Site', status: 'Health', lastObservedAtUtc: 'Last observed', latencyMs: 'Latency', cpuPercent: 'CPU' }
+  return `${names[sort]} ${direction === 'asc' ? 'ascending' : 'descending'}`
 }
