@@ -127,3 +127,24 @@ describe('device page boundary', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 })
+
+
+describe('literal global device search', () => {
+  it.each(['  Edmonton & <tag> + %  ', 'é😀', ' ' + '😀'.repeat(50) + ' '])('trims and safely encodes literal search %s', async q => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(page()))
+    await createReadApi('https://example.test', fetcher).getDevices({ page: 1, pageSize: 25, q }, new AbortController().signal)
+    const url = new URL(String(fetcher.mock.calls[0][0]))
+    expect(url.searchParams.get('q')).toBe(q.trim())
+    expect([...url.searchParams.keys()]).toEqual(['page', 'pageSize', 'sort', 'direction', 'q'])
+  })
+  it('omits neutral whitespace search from the wire request', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(page()))
+    await createReadApi('https://example.test', fetcher).getDevices({ page: 1, pageSize: 25, q: '  ' }, new AbortController().signal)
+    expect(new URL(String(fetcher.mock.calls[0][0])).searchParams.has('q')).toBe(false)
+  })
+  it.each(['x'.repeat(101), '😀'.repeat(50) + 'x', 42, null])('rejects invalid search before HTTP %#', async q => {
+    const fetcher = vi.fn<typeof fetch>()
+    await expect(createReadApi('https://example.test', fetcher).getDevices({ page: 1, pageSize: 25, q: q as string }, new AbortController().signal)).rejects.toBeInstanceOf(ReadApiError)
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+})

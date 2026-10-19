@@ -15,7 +15,7 @@ export type DeviceRow = Readonly<{
 }>
 
 /** API coordinates are one-based; the table translates its zero-based state at the call site. */
-export type DevicePageRequest = Readonly<{ page: number; pageSize: number }>
+export type DevicePageRequest = Readonly<{ page: number; pageSize: number; q?: string }>
 
 /** One server page with a fleet result count; items are never treated as the entire inventory. */
 export type DevicePage = Readonly<{
@@ -117,8 +117,8 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
       return body
     },
     /**
-     * Gets one active-device page in the server's displayName ascending order; no local sorting or filtering occurs.
-     * @param request One-based page and capacity from 1 through 100.
+     * Gets one globally searched page in displayName ascending order; no local filtering occurs.
+     * @param request One-based page, capacity 1..100, and optional literal name/tag search (100 UTF-16 units after trimming).
      * @param signal Query-owned cancellation; no deadline or retry is added here.
      * @returns A checked page matching the requested coordinates, with stable catalog IDs and explicit nulls.
      * @throws ReadApiError for invalid coordinates or invalid transport/response data, without echoing raw diagnostics.
@@ -128,7 +128,11 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
       if (!request || !Number.isInteger(request.page) || request.page < 1 || request.page > 2_147_483_647
         || !Number.isInteger(request.pageSize) || request.pageSize < 1 || request.pageSize > 100)
         throw new ReadApiError('The device page request is invalid.')
+      if (request.q !== undefined && typeof request.q !== 'string') throw new ReadApiError('The device search is invalid.')
+      const q = request.q?.trim() ?? ''
+      if (q.length > 100) throw new ReadApiError('The device search must contain at most 100 characters after trimming.')
       const search = new URLSearchParams({ page: String(request.page), pageSize: String(request.pageSize), sort: 'displayName', direction: 'asc' })
+      if (q) search.set('q', q)
       const body = await readJson(`/api/v1/devices?${search}`, signal, 'devices')
       if (!isDevicePage(body, request)) throw invalidPayload('devices')
       return body

@@ -2,11 +2,12 @@
 
 HealthMonitor monitors a fictional infrastructure fleet using device registrations, simulated telemetry, health assessments and incident history. Its intended dashboard helps users find unhealthy devices and inspect their recent measurements and incidents.
 
-**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes fleet metrics and a server-paged device grid with refresh and failure states. Interactive filtering/sorting, the device drawer and AI interface remain planned. Verification evidence and remaining limits are recorded in the progress document. AI translation is disabled in production composition.
+**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes fleet metrics and a server-paged device grid with refresh and failure states. Global name/asset-tag search is available; site/type/health filters, interactive sorting, the device drawer and AI interface remain planned. Verification evidence and remaining limits are recorded in the progress document. AI translation is disabled in production composition.
 
 ## Functionality
 
 - Read-only fleet metrics and device grid, with page-size choices, previous/next controls, page totals and explicit stale-data warnings.
+- Search all active devices by literal name or asset tag, then use Search or Clear search. Applying a search resets to page one and retains page size; editing the text alone sends no request. Fleet metrics remain global. Previous results retain their search label while a new request loads or fails.
 - A shared Automatic updates control for both panels. Your choice is remembered in browser storage when available; pausing stops background refresh, while initial loading, manual refresh and page navigation still work. Requests already running may finish.
 - Device catalog and fleet summary APIs, with validated filtering, sorting and pagination.
 - Per-device details, telemetry history and incident history.
