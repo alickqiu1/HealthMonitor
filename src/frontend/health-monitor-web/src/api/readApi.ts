@@ -35,6 +35,29 @@ export type DevicePage = Readonly<{
   asOfUtc: string
 }>
 
+/** Flat V1 detail projection; retired registrations remain addressable by explicit UUID. */
+export type DeviceDetail = DeviceRow & Readonly<{
+  createdAtUtc: string
+  retiredAtUtc: string | null
+  lastSuccessfulAtUtc: string | null
+  asOfUtc: string
+}>
+/** Persisted observation facts; null measurements remain null rather than becoming zero. */
+export type TelemetryObservation = Readonly<{
+  id: string; deviceId: string; observedAtUtc: string; outcome: 'Success' | 'Timeout'
+  latencyMs: number | null; cpuPercent: number | null
+}>
+/** Plain-text incident facts; an absent resolution means open, not a missing response field. */
+export type DeviceIncident = Readonly<{
+  id: string; deviceId: string; kind: 'Latency' | 'Cpu' | 'Connectivity'
+  openedAtUtc: string; resolvedAtUtc: string | null; summary: string
+}>
+/** Fixed first-page preview, not a complete history. Total count belongs to the endpoint's effective scope. */
+export type RecentHistory<T> = Readonly<{
+  items: readonly T[]; page: 1; pageSize: 10; totalCount: number; asOfUtc: string
+}>
+type ReadResource = 'summary' | 'devices' | 'details' | 'telemetry' | 'incidents'
+
 /** The existing V1 fleet-wide summary. Missing latency is distinct from a measured zero. */
 export type MetricsSummary = Readonly<{
   total: number
@@ -78,8 +101,8 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
   }
   const origin = url.origin
 
-  /** Shared transport for the two owned GET routes; no cache, retry policy or general HTTP framework is added. */
-  async function readJson(path: string, signal: AbortSignal, resource: 'summary' | 'devices'): Promise<unknown> {
+  /** Shared transport for the owned GET routes; no cache, retry policy or general HTTP framework is added. */
+  async function readJson(path: string, signal: AbortSignal, resource: ReadResource): Promise<unknown> {
     signal.throwIfAborted()
     let response: Response
     try {
@@ -100,7 +123,9 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
       }
       signal.throwIfAborted()
       throw new ReadApiError(response.status === 503 ? 'Monitoring data is temporarily unavailable.'
-        : resource === 'summary' ? 'Fleet metrics could not be loaded.' : 'Device registrations could not be loaded.', response.status, code)
+        : response.status === 404 && resource !== 'summary' && resource !== 'devices' ? 'This device is no longer available.'
+          : resource === 'summary' ? 'Fleet metrics could not be loaded.'
+            : resource === 'devices' ? 'Device registrations could not be loaded.' : 'Device details or history could not be loaded.', response.status, code)
     }
     let body: unknown
     try { body = await response.json() }
@@ -156,12 +181,52 @@ export function createReadApi(baseUrl: string | undefined, fetcher: typeof fetch
       if (!isDevicePage(body, request)) throw invalidPayload('devices')
       return body
     },
+    /**
+     * Reads one known active or retired device without trusting grid cache rows as detail.
+     * @param deviceId Nonempty D-format UUID; equivalent response casing is permitted.
+     * @param signal Query-owned cancellation, forwarded and checked before publication.
+     * @returns Checked flat detail with original UTC precision; no health or retirement inference.
+     * @throws ReadApiError for invalid identity, sanitized HTTP failure, or invalid/mismatched response shape.
+     */
+    async getDevice(deviceId: string, signal: AbortSignal): Promise<DeviceDetail> {
+      signal.throwIfAborted(); requireDeviceId(deviceId)
+      const body = await readJson(`/api/v1/devices/${encodeURIComponent(deviceId)}`, signal, 'details')
+      if (!isDetail(body, deviceId)) throw invalidPayload('details')
+      return body
+    },
+    /**
+     * Reads up to ten newest observations in the server's default trailing 24-hour half-open UTC window.
+     * @param deviceId Explicit active or retired device UUID.
+     * @param signal Query-owned cancellation; no clock, local filtering, pagination or retry is added.
+     * @returns First page and count within that effective window, evaluated at its own asOfUtc.
+     * @throws ReadApiError for invalid identity, sanitized HTTP failure, or invalid/mismatched history.
+     */
+    async getRecentTelemetry(deviceId: string, signal: AbortSignal): Promise<RecentHistory<TelemetryObservation>> {
+      signal.throwIfAborted(); requireDeviceId(deviceId)
+      const body = await readJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/telemetry?page=1&pageSize=10`, signal, 'telemetry')
+      if (!isRecentHistory(body, deviceId, isObservation)) throw invalidPayload('telemetry')
+      return body
+    },
+    /**
+     * Reads up to ten newest retained incidents, all lifecycle states; no lifetime completeness is implied.
+     * @param deviceId Explicit active or retired device UUID.
+     * @param signal Query-owned cancellation, forwarded unchanged.
+     * @returns First page and retained-record count, evaluated independently of detail/telemetry reads.
+     * @throws ReadApiError for invalid identity, sanitized HTTP failure, or invalid/mismatched history.
+     */
+    async getRecentIncidents(deviceId: string, signal: AbortSignal): Promise<RecentHistory<DeviceIncident>> {
+      signal.throwIfAborted(); requireDeviceId(deviceId)
+      const body = await readJson(`/api/v1/devices/${encodeURIComponent(deviceId)}/incidents?page=1&pageSize=10&state=all`, signal, 'incidents')
+      if (!isRecentHistory(body, deviceId, isIncident)) throw invalidPayload('incidents')
+      return body
+    },
   }
 }
 
 /** Keeps invalid JSON/shape messages owned and consistent without exposing the rejected response. */
-function invalidPayload(resource: 'summary' | 'devices') {
-  return new ReadApiError(resource === 'summary' ? 'The monitoring API returned an invalid summary.' : 'The monitoring API returned an invalid device page.')
+function invalidPayload(resource: ReadResource) {
+  const messages = { summary: 'summary', devices: 'device page', details: 'device detail', telemetry: 'telemetry history', incidents: 'incident history' }
+  return new ReadApiError(`The monitoring API returned an invalid ${messages[resource]}.`)
 }
 
 export type ReadApi = ReturnType<typeof createReadApi>
@@ -204,4 +269,44 @@ function isDeviceRow(value: unknown): value is DeviceRow {
     && (value.lastObservedAtUtc === null || isUtcInstant(value.lastObservedAtUtc))
     && (value.latencyMs === null || (Number.isInteger(value.latencyMs) && (value.latencyMs as number) >= 0 && (value.latencyMs as number) <= 2_147_483_647))
     && (value.cpuPercent === null || (typeof value.cpuPercent === 'number' && Number.isFinite(value.cpuPercent) && value.cpuPercent >= 0 && value.cpuPercent <= 100))
+}
+
+/** Checks flat V1 extension fields before narrowing the common row projection; retirement remains server-owned. */
+function isDetail(value: unknown, deviceId: string): value is DeviceDetail {
+  return isRecord(value) && isUtcInstant(value.createdAtUtc) && nullableUtc(value.retiredAtUtc)
+    && nullableUtc(value.lastSuccessfulAtUtc) && isUtcInstant(value.asOfUtc) && isDeviceRow(value) && sameUuid(value.id, deviceId)
+}
+
+/** New identity-specific reads reject empty UUIDs before HTTP without echoing caller input. */
+function requireDeviceId(value: unknown): asserts value is string {
+  if (!isUuid(value)) throw new ReadApiError('The device identity is invalid.')
+}
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)
+    && value !== '00000000-0000-0000-0000-000000000000'
+}
+/** PostgreSQL UUID identity is case-insensitive; lexical case must not create a false device mismatch. */
+function sameUuid(value: unknown, expected: string): boolean {
+  return isUuid(value) && value.toLowerCase() === expected.toLowerCase()
+}
+function nullableUtc(value: unknown): boolean { return value === null || isUtcInstant(value) }
+function nullableLatency(value: unknown): boolean { return value === null || (Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 2_147_483_647) }
+function nullableCpu(value: unknown): boolean { return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100) }
+/** Validate wire shape and route membership, without recomputing health, thresholds or lifecycle rules. */
+function isObservation(value: unknown): value is TelemetryObservation {
+  return isRecord(value) && isUuid(value.id) && isUuid(value.deviceId) && isUtcInstant(value.observedAtUtc)
+    && (value.outcome === 'Success' || value.outcome === 'Timeout') && nullableLatency(value.latencyMs) && nullableCpu(value.cpuPercent)
+}
+function isIncident(value: unknown): value is DeviceIncident {
+  return isRecord(value) && isUuid(value.id) && isUuid(value.deviceId)
+    && (value.kind === 'Latency' || value.kind === 'Cpu' || value.kind === 'Connectivity')
+    && isUtcInstant(value.openedAtUtc) && nullableUtc(value.resolvedAtUtc) && typeof value.summary === 'string'
+}
+/** Both fixed previews share the existing page envelope; uniqueness is by record UUID, never timestamp. */
+function isRecentHistory<T extends { id: string; deviceId: string }>(value: unknown, deviceId: string, validItem: (item: unknown) => item is T): value is RecentHistory<T> {
+  if (!isRecord(value) || value.page !== 1 || value.pageSize !== 10 || !Number.isSafeInteger(value.totalCount)
+    || (value.totalCount as number) < 0 || !isUtcInstant(value.asOfUtc) || !Array.isArray(value.items)
+    || value.items.length > 10 || value.items.length > (value.totalCount as number)
+    || !value.items.every(item => validItem(item) && sameUuid(item.deviceId, deviceId))) return false
+  return new Set(value.items.map(item => item.id.toLowerCase())).size === value.items.length
 }

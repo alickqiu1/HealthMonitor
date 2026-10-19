@@ -189,3 +189,93 @@ describe('allowlisted server device sorting', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 })
+
+
+const detailIdentity = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+/** V1 wire facts are fictional and independent of any running API/database. */
+function detailBody() {
+  return { ...device, id: detailIdentity, createdAtUtc: '2026-10-17T12:00:00Z', retiredAtUtc: null, lastSuccessfulAtUtc: null, asOfUtc: summary.asOfUtc }
+}
+function observationBody() {
+  return { id: 'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee', deviceId: detailIdentity, observedAtUtc: summary.asOfUtc, outcome: 'Success', latencyMs: 0, cpuPercent: 0 }
+}
+function incidentBody() {
+  return { id: 'cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee', deviceId: detailIdentity, kind: 'Cpu', openedAtUtc: summary.asOfUtc, resolvedAtUtc: null, summary: 'Synthetic CPU condition.' }
+}
+/** History totals describe the server scope; one preview never implies a complete lifetime history. */
+function recentBody(items: unknown[] = [], totalCount = items.length) { return { items, page: 1, pageSize: 10, totalCount, asOfUtc: summary.asOfUtc } }
+const detailReads = ['getDevice', 'getRecentTelemetry', 'getRecentIncidents'] as const
+
+describe('UUID-specific detail and recent-history contracts', () => {
+  it.each(detailReads)('requests the exact owned %s route and preserves caller cancellation identity', async method => {
+    const body = method === 'getDevice' ? detailBody() : recentBody(method === 'getRecentTelemetry' ? [observationBody()] : [incidentBody()])
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(body)); const signal = new AbortController().signal
+    expect(await createReadApi('https://example.test', fetcher)[method](detailIdentity.toUpperCase(), signal)).toEqual(body)
+    const suffix = method === 'getDevice' ? '' : method === 'getRecentTelemetry' ? '/telemetry?page=1&pageSize=10' : '/incidents?page=1&pageSize=10&state=all'
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('https://example.test/api/v1/devices/' + detailIdentity.toUpperCase() + suffix, { signal, headers: { Accept: 'application/json' }, credentials: 'omit' })
+  })
+  it.each(detailReads)('rejects malformed/empty identities without HTTP for %s', async method => {
+    const fetcher = vi.fn<typeof fetch>(); const api = createReadApi('https://example.test', fetcher)
+    for (const identity of ['', 'private-invalid-id', '../devices', '00000000-0000-0000-0000-000000000000', null, 42]) {
+      await expect(api[method](identity as string, new AbortController().signal)).rejects.toMatchObject({ message: 'The device identity is invalid.' })
+    }
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('preserves retired registration, unknown health, null measurements and original UTC tick precision', async () => {
+    const body = { ...detailBody(), health: 'Unknown', latencyMs: null, cpuPercent: null, lastObservedAtUtc: null, retiredAtUtc: summary.asOfUtc, lastSuccessfulAtUtc: '2026-10-18T11:00:00.1234567Z' }
+    expect(await createReadApi('https://example.test', vi.fn<typeof fetch>().mockResolvedValue(json(body))).getDevice(detailIdentity, new AbortController().signal)).toEqual(body)
+  })
+  it.each([null, {}, { ...detailBody(), id: device.id }, { ...detailBody(), createdAtUtc: null }, { ...detailBody(), retiredAtUtc: undefined }, { ...detailBody(), lastSuccessfulAtUtc: undefined }, { ...detailBody(), asOfUtc: '2026-02-31T12:00:00Z' }])('rejects wrong-device or incomplete detail %#', async body => {
+    await expect(createReadApi('https://example.test', vi.fn<typeof fetch>().mockResolvedValue(json(body))).getDevice(detailIdentity, new AbortController().signal)).rejects.toThrow('invalid device detail')
+  })
+  it.each(['getRecentTelemetry', 'getRecentIncidents'] as const)('accepts empty and exact-ten previews with true larger totals for %s', async method => {
+    const item = method === 'getRecentTelemetry' ? observationBody() : incidentBody()
+    const items = Array.from({ length: 10 }, (_, index) => ({ ...item, id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}` }))
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(recentBody())).mockResolvedValueOnce(json(recentBody(items, 31)))
+    const api = createReadApi('https://example.test', fetcher)
+    expect((await api[method](detailIdentity, new AbortController().signal)).items).toEqual([])
+    expect(await api[method](detailIdentity, new AbortController().signal)).toEqual(recentBody(items, 31))
+  })
+  it.each(['getRecentTelemetry', 'getRecentIncidents'] as const)('validates page identity, limits, device membership and event UUID uniqueness for %s', async method => {
+    const item = method === 'getRecentTelemetry' ? observationBody() : incidentBody()
+    const body = recentBody([item])
+    const invalid = [null, {}, { ...body, page: 2 }, { ...body, pageSize: 25 }, { ...body, totalCount: -1 }, { ...body, totalCount: 0 }, { ...body, asOfUtc: 'not-UTC' }, { ...body, items: Array(11).fill(item), totalCount: 11 }, recentBody([{ ...item, deviceId: device.id }]), recentBody([{ ...item, id: 'not-an-id' }]), recentBody([item, { ...item, id: item.id.toUpperCase() }])]
+    for (const value of invalid) await expect(createReadApi('https://example.test', vi.fn<typeof fetch>().mockResolvedValue(json(value)))[method](detailIdentity, new AbortController().signal)).rejects.toThrow('invalid')
+    // Two distinct events may share a timestamp. Uniqueness must not drop one of them.
+    const valid = recentBody([item, { ...item, id: 'dddddddd-bbbb-4ccc-8ddd-eeeeeeeeeeee', deviceId: detailIdentity.toUpperCase() }])
+    expect(await createReadApi('https://example.test', vi.fn<typeof fetch>().mockResolvedValue(json(valid)))[method](detailIdentity, new AbortController().signal)).toEqual(valid)
+  })
+  it.each([{ outcome: 'Timeout', latencyMs: null, cpuPercent: null }, { outcome: 'Success', latencyMs: 2_147_483_647, cpuPercent: 100 }])('preserves legitimate observation measurements %#', async fields => {
+    const body = recentBody([{ ...observationBody(), ...fields }])
+    expect(await createReadApi('https://example.test', vi.fn<typeof fetch>().mockResolvedValue(json(body))).getRecentTelemetry(detailIdentity, new AbortController().signal)).toEqual(body)
+  })
+  it.each([{ outcome: 'success' }, { observedAtUtc: null }, { latencyMs: -1 }, { latencyMs: 1.5 }, { latencyMs: 2_147_483_648 }, { cpuPercent: 101 }, { cpuPercent: undefined }])('rejects invalid observation wire fields %#', async fields => {
+    const body = recentBody([{ ...observationBody(), ...fields }])
+    await expect(createReadApi('https://example.test', vi.fn<typeof fetch>().mockResolvedValue(json(body))).getRecentTelemetry(detailIdentity, new AbortController().signal)).rejects.toThrow('invalid telemetry history')
+  })
+  it.each(['Latency', 'Cpu', 'Connectivity'])('preserves plain-text %s incident summary and nullable/resolved lifecycle fields', async kind => {
+    const body = recentBody([{ ...incidentBody(), kind, resolvedAtUtc: summary.asOfUtc, summary: '<script>not executed</script>' }])
+    expect(await createReadApi('https://example.test', vi.fn<typeof fetch>().mockResolvedValue(json(body))).getRecentIncidents(detailIdentity, new AbortController().signal)).toEqual(body)
+  })
+  it.each([{ kind: 'CPU' }, { openedAtUtc: '2026-10-18' }, { resolvedAtUtc: undefined }, { summary: null }])('rejects invalid incident wire fields %#', async fields => {
+    await expect(createReadApi('https://example.test', vi.fn<typeof fetch>().mockResolvedValue(json(recentBody([{ ...incidentBody(), ...fields }])))).getRecentIncidents(detailIdentity, new AbortController().signal)).rejects.toThrow('invalid incident history')
+  })
+  it.each(detailReads)('sanitizes missing/unavailable/error responses for %s without raw details', async method => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ title: 'private-canary', detail: '<html>secret</html>' }, 404, 'application/problem+json')).mockResolvedValueOnce(json({}, 503)).mockResolvedValueOnce(new Response('<html>private-canary</html>', { status: 500 }))
+    const api = createReadApi('https://example.test', fetcher)
+    await expect(api[method](detailIdentity, new AbortController().signal)).rejects.toMatchObject({ status: 404, message: 'This device is no longer available.' })
+    await expect(api[method](detailIdentity, new AbortController().signal)).rejects.toMatchObject({ status: 503, message: 'Monitoring data is temporarily unavailable.' })
+    await expect(api[method](detailIdentity, new AbortController().signal)).rejects.toMatchObject({ status: 500, message: 'Device details or history could not be loaded.' })
+    expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+  it.each(detailReads)('preserves pre-start and pending-body cancellation for %s', async method => {
+    const reason = new Error('owned cancellation'); const before = new AbortController(); before.abort(reason)
+    const fetcher = vi.fn<typeof fetch>(); const api = createReadApi('https://example.test', fetcher)
+    await expect(api[method](detailIdentity, before.signal)).rejects.toBe(reason)
+    expect(fetcher).not.toHaveBeenCalled()
+    const controller = new AbortController()
+    const body = method === 'getDevice' ? detailBody() : recentBody()
+    fetcher.mockResolvedValue({ ok: true, json: async () => { controller.abort(reason); return body } } as Response)
+    await expect(api[method](detailIdentity, controller.signal)).rejects.toBe(reason)
+  })
+})
