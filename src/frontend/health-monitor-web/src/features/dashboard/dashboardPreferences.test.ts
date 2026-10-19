@@ -55,3 +55,28 @@ it('works without storage and does not introduce a persistence dependency for mo
   expect(() => store.getState().setPollingEnabled(false)).not.toThrow()
   expect(store.getState().pollingEnabled).toBe(false)
 })
+
+
+it('keeps selection/open coherent without persisting it and clears selection on close', async () => {
+  const { store, storage } = await load(null)
+  expect(store.getState()).toMatchObject({ selectedDeviceId: null, drawerOpen: false })
+  store.getState().openDevice('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+  expect(store.getState()).toMatchObject({ selectedDeviceId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', drawerOpen: true })
+  store.getState().openDevice('bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+  expect(store.getState().selectedDeviceId).toBe('bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+  store.getState().closeDrawer()
+  expect(store.getState()).toMatchObject({ selectedDeviceId: null, drawerOpen: false })
+  expect(storage.setItem).not.toHaveBeenCalled()
+  expect(() => store.getState().openDevice('  ')).toThrow('A device identity is required.')
+  expect(store.getState().drawerOpen).toBe(false)
+})
+
+it('does not restore selection on reload while preserving the one polling preference', async () => {
+  const { store, storage } = await load('false')
+  store.getState().openDevice('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+  store.getState().setPollingEnabled(true)
+  expect(storage.setItem).toHaveBeenCalledExactlyOnceWith(key, 'true')
+  vi.resetModules()
+  const reloaded = (await import('./dashboardPreferences')).useDashboardPreferences
+  expect(reloaded.getState()).toMatchObject({ selectedDeviceId: null, drawerOpen: false })
+})

@@ -2,16 +2,16 @@
 
 HealthMonitor monitors a fictional infrastructure fleet using device registrations, simulated telemetry, health assessments and incident history. Its intended dashboard helps users find unhealthy devices and inspect their recent measurements and incidents.
 
-**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes fleet metrics and a server-paged device grid with refresh and failure states. Global name/asset-tag search is available; server-side sorting is available; the device drawer and AI interface remain planned. Verification evidence and remaining limits are recorded in the progress document. AI translation is disabled in production composition.
+**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes fleet metrics and a server-paged device grid with refresh and failure states. Global name/asset-tag search, filters, server-side sorting and a device details panel are implemented. The AI interface remains a future enhancement. Verification evidence and remaining limits are recorded in the progress document. AI translation is disabled in production composition.
 
 ## Functionality
 
 - Read-only fleet metrics and device grid, with page-size choices, previous/next controls, page totals and explicit stale-data warnings.
 - Search all active devices by literal name or asset tag, then use Search or Clear search. Site, Type and Health dropdowns apply immediately and combine with applied search using AND; they do not submit unfinished search text. Clear search removes text only; Clear all filters also resets the dropdowns. Applying a search or selecting a filter resets to page one and retains page size; editing the text alone sends no request. Fleet metrics remain global. Previous results retain their search and filter labels while a new request loads or fails.
 - Supported column headers toggle server-side ascending/descending order, with one active sort and a page-one reset that preserves filters and page size. Type is unsortable. Missing values stay last in either direction; ascending health order is Offline, Degraded, Unknown, Healthy. Header arrows show requested order; retained rows keep their previous order description until a response arrives. Clear all filters also restores Name ascending.
-- A shared Automatic updates control for both panels. Your choice is remembered in browser storage when available; pausing stops background refresh, while initial loading, manual refresh and page navigation still work. Requests already running may finish.
+- A shared Automatic updates control for the dashboard and open device details. Your choice is remembered in browser storage when available; pausing stops background refresh, while initial loading, manual refresh and page navigation still work. Requests already running may finish.
 - Device catalog and fleet summary APIs, with validated filtering, sorting and pagination.
-- Per-device details, telemetry history and incident history.
+- A device details panel with registration/health facts, up to 10 recent measurements from the server's trailing 24-hour window, and up to 10 retained incidents across lifecycle states. Each section has independent refresh, error and stale-data handling; the previews do not represent complete lifetime history.
 - Atomic telemetry ingestion with idempotency, incident lifecycle processing and concurrency safeguards.
 - An optional telemetry producer, retention processing and a separately controlled local simulation API.
 - A provider-neutral AI query contract, strict proposal validation and bounded Groq transport. Local admission controls have automated coverage, but remaining configuration, operational controls and activation are incomplete. No live model evaluation is claimed.
@@ -23,7 +23,7 @@ All inventory and telemetry are synthetic. This application is not connected to 
 The backend is a .NET 10 modular application with a single ASP.NET Core facade:
 
 ```text
-React client — fleet metrics and paged device grid; drawer planned
+React client — fleet metrics, paged device grid and device details
             |
 ASP.NET Core API — HTTP contracts and composition
             |
@@ -35,7 +35,7 @@ Infrastructure — port implementations, EF Core and PostgreSQL
                  separate Device and Telemetry contexts/schemas
 ```
 
-TanStack Query owns response data and cache; Zustand holds only the shared, nonsecret updates preference. Device owns registrations; Telemetry owns measurements and incidents. Application contracts preserve that ownership while the API composes read results. AI translates text into a validated filter proposal; it has no database or write-use-case access. Applying a proposal will use the ordinary read APIs.
+TanStack Query owns response data and cache; Zustand holds ephemeral device selection and the shared, nonsecret updates preference; only the updates choice is persisted. Device owns registrations; Telemetry owns measurements and incidents. Application contracts preserve that ownership while the API composes read results. AI translates text into a validated filter proposal; it has no database or write-use-case access. Applying a proposal will use the ordinary read APIs.
 
 | Location | Responsibility |
 | --- | --- |
@@ -96,4 +96,4 @@ Work proceeds in small increments with local checks and GitHub Actions verificat
 - [Technical Architecture Plan, Edition 1.5](docs/architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md): authoritative requirements, module boundaries, setup and operational procedures.
 - [AI provider decision](docs/development/AiProviderDecision.md): selected provider/model, rationale and remaining evaluation limits.
 
-The next visible application increments are global grid filtering/sorting and the device drawer on the existing read APIs. Remaining AI ingress, credential composition, counter provisioning and activation work stays open; resume it from the progress document rather than treating tested components as an enabled feature.
+The remaining bounded delivery work is a verified, populated synthetic-data demonstration and a concise walkthrough with actual screenshots. Device-details native keyboard/focus behavior and layout still require browser acceptance; source/controlled-test evidence is recorded in the progress document. Remaining AI ingress, credential composition, counter provisioning and activation work stays open; resume it from the progress document rather than treating tested components as an enabled feature.

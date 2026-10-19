@@ -14,6 +14,7 @@ const columns: ColumnDef<DeviceRow>[] = [
   { accessorKey: 'health', header: 'Health' },
   { accessorKey: 'latencyMs', header: 'Latency', cell: context => context.row.original.latencyMs === null ? '—' : `${context.row.original.latencyMs} ms` },
   { accessorKey: 'cpuPercent', header: 'CPU', cell: context => context.row.original.cpuPercent === null ? '—' : `${context.row.original.cpuPercent}%` },
+  { id: 'details', header: 'Details', enableSorting: false, cell: context => <DeviceDetailsButton device={context.row.original} /> },
   { accessorKey: 'lastObservedAtUtc', header: 'Last observed (UTC)', cell: context => context.row.original.lastObservedAtUtc === null ? 'Not observed' : <UtcTime value={context.row.original.lastObservedAtUtc} /> },
 ]
 
@@ -143,7 +144,7 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
 
   return <section aria-labelledby="devices-title" className="space-y-4">
     <div className="flex flex-wrap items-end justify-between gap-4">
-      <div><h2 id="devices-title" className="text-2xl font-semibold tracking-tight">Devices</h2>
+      <div><h2 id="devices-title" tabIndex={-1} className="text-2xl font-semibold tracking-tight">Devices</h2>
         <p className="mt-1 text-sm text-slate-600">Active registrations · Order requested: {sortLabel(request)}</p></div>
       <button type="button" disabled={busy} onClick={() => void query.refetch({ cancelRefetch: false })}
         className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 disabled:opacity-50">
@@ -257,4 +258,13 @@ function sameRequest(left: GridRequest, right: GridRequest): boolean {
 function sortLabel({ sort, direction }: GridRequest): string {
   const names = { displayName: 'Name', assetTag: 'Asset tag', siteCode: 'Site', status: 'Health', lastObservedAtUtc: 'Last observed', latencyMs: 'Latency', cpuPercent: 'CPU' }
   return `${names[sort]} ${direction === 'asc' ? 'ascending' : 'descending'}`
+}
+
+/** Focus is captured at activation; the dialog can later fall back to the heading if refreshed rows disappear. */
+function DeviceDetailsButton({ device }: { device: DeviceRow }) {
+  const openDevice = useDashboardPreferences(state => state.openDevice)
+  return <button type="button" aria-label={`View details for ${device.displayName}`} aria-haspopup="dialog" onClick={event => { event.currentTarget.focus(); openDevice(device.id) }}
+    className="rounded border border-slate-300 bg-white px-3 py-2 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700">
+    View details
+  </button>
 }

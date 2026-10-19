@@ -4,10 +4,13 @@ import { createReadApi, ReadApiError } from './api/readApi'
 import type { ReadApi } from './api/readApi'
 import { MetricsOverview } from './features/dashboard/MetricsOverview'
 import { DeviceDataGrid } from './features/dashboard/DeviceDataGrid'
+import { DeviceDetailsDialog } from './features/dashboard/DeviceDetailsDialog'
 import type { DeviceGridState } from './features/dashboard/DeviceDataGrid'
 
 /** The first read-only dashboard slice; unavailable AI never gates ordinary monitoring reads. */
 function App() {
+  const drawerOpen = useDashboardPreferences(state => state.drawerOpen)
+  const selectedDeviceId = useDashboardPreferences(state => state.selectedDeviceId)
   const pollingEnabled = useDashboardPreferences(state => state.pollingEnabled)
   const setPollingEnabled = useDashboardPreferences(state => state.setPollingEnabled)
   // Applied search and paging change atomically with one dashboard owner; Query alone owns response data.
@@ -38,7 +41,8 @@ function App() {
             </div>
             <p id="automatic-updates-note" className="mt-2 text-xs text-slate-600">Pauses background refresh only. Opening the dashboard, manual refresh and page changes still load data. Requests already running may finish.</p>
           </div>
-          <MetricsOverview api={api} /><DeviceDataGrid api={api} state={grid} onStateChange={setGrid} /></div> : <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-6">
+          <MetricsOverview api={api} /><DeviceDataGrid api={api} state={grid} onStateChange={setGrid} />
+          {drawerOpen && selectedDeviceId && <DeviceDetailsDialog api={api} deviceId={selectedDeviceId} />}</div> : <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-6">
           <h2 className="font-semibold">Connect the monitoring API</h2>
           <p className="mt-2 text-sm">{configurationError} See the project README for local setup.</p>
         </div>}

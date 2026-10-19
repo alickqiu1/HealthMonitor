@@ -2,6 +2,10 @@ import { create } from 'zustand'
 
 const storageKey = 'healthmonitor-polling-enabled'
 type DashboardPreferences = {
+  selectedDeviceId: string | null
+  drawerOpen: boolean
+  openDevice: (deviceId: string) => void
+  closeDrawer: () => void
   pollingEnabled: boolean
   setPollingEnabled: (enabled: boolean) => void
 }
@@ -13,11 +17,19 @@ function readPollingChoice(): boolean {
 }
 
 /**
- * Shared UI preference only: Query retains every response, page and freshness value.
- * Persistence is best-effort and reload-based; this does not implement cross-tab synchronization.
+ * UI selection and preference only: Query retains every response, page and freshness value.
+ * Selection is never persisted. Preference persistence is best-effort and reload-based; this does not implement cross-tab synchronization.
  * Pausing changes background refresh policy, not current requests, server health or backend telemetry production.
  */
 export const useDashboardPreferences = create<DashboardPreferences>(set => ({
+  selectedDeviceId: null,
+  drawerOpen: false,
+  // Keep selection/open coherent through actions; validated catalog UUIDs come from the read projection.
+  openDevice: deviceId => {
+    if (typeof deviceId !== 'string' || !deviceId.trim()) throw new Error('A device identity is required.')
+    set({ selectedDeviceId: deviceId, drawerOpen: true })
+  },
+  closeDrawer: () => set({ selectedDeviceId: null, drawerOpen: false }),
   pollingEnabled: readPollingChoice(),
   setPollingEnabled: enabled => {
     set({ pollingEnabled: enabled })
