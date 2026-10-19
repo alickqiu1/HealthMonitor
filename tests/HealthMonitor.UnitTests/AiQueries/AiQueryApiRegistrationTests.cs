@@ -40,6 +40,8 @@ public sealed class AiQueryApiRegistrationTests
         Assert.False(cors.GetPolicy(AiQueryApiComposition.CorsPolicyName)!.SupportsCredentials);
         // Resolving Application composition would require the intentionally absent generator; disabled discovery must not do so.
         Assert.Null(provider.GetService<IStructuredQueryGenerator>());
+        var options = provider.GetRequiredService<AiQueryOptions>();
+        Assert.False(options.Enabled); Assert.Null(options.ApiKey); Assert.Null(options.Profile); Assert.Null(options.BudgetCounterPath);
     }
 
     [Theory]
@@ -71,5 +73,49 @@ public sealed class AiQueryApiRegistrationTests
         Assert.Contains("AiQueries:Enabled", error.Message);
         Assert.DoesNotContain("private-config-canary", error.Message);
         Assert.DoesNotContain("not-read-by-this-composition", error.Message);
+    }
+    /// <summary>Premature production enablement must fail before looking up active provider or counter settings.</summary>
+    [Fact]
+    public void EnabledGate_PrecedesActiveProviderAndCredentialValidation()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        { ["AiQueries:Enabled"] = "true", ["AiQueries:Provider"] = "private-config-canary", ["AiQueries:ApiKey"] = "not-a-valid-key value" }).Build();
+        var error = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddAiQueryApi(configuration));
+        Assert.Contains("AiQueries:Enabled", error.Message);
+        Assert.Contains("cannot be enabled", error.Message);
+        Assert.DoesNotContain("private-config-canary", error.ToString());
+        Assert.DoesNotContain("not-a-valid-key", error.ToString());
+    }
+    /// <summary>Proves a configuration reload cannot turn disabled registration into active credential binding.</summary>
+    [Fact]
+    public void EnablementChangesAfterFirstRead_StillRegistersOnlyDisabledSnapshot()
+    {
+        var guarded = new FlippingEnablementProvider();
+        using var configuration = new ConfigurationRoot([guarded]);
+        var services = new ServiceCollection();
+        services.AddLogging(); services.AddReadApi(); services.AddReadCors(configuration); services.AddAiQueryApi(configuration);
+        using var provider = services.BuildServiceProvider();
+        Assert.False(provider.GetRequiredService<AiQueryOptions>().Enabled);
+        Assert.Null(provider.GetRequiredService<AiQueryOptions>().ApiKey);
+        Assert.Null(provider.GetService<IStructuredQueryGenerator>());
+        Assert.Equal(1, guarded.EnabledReads); Assert.Equal(0, guarded.SensitiveReads);
+    }
+
+    /// <summary>Changes enablement on a second lookup and fails any active-setting value read.</summary>
+    /// <remarks>Key metadata stays available; no real configuration or secret provider is involved.</remarks>
+    private sealed class FlippingEnablementProvider : ConfigurationProvider
+    {
+        internal int EnabledReads { get; private set; }
+        internal int SensitiveReads { get; private set; }
+        internal FlippingEnablementProvider()
+        { Data["AiQueries:Enabled"] = "false"; Data["AiQueries:ApiKey"] = "never-read-private-canary"; }
+        public override bool TryGet(string key, out string? value)
+        {
+            if (key.Equals("AiQueries:Enabled", StringComparison.OrdinalIgnoreCase))
+            { EnabledReads++; value = EnabledReads == 1 ? "false" : "true"; return true; }
+            if (key.StartsWith("AiQueries:", StringComparison.OrdinalIgnoreCase))
+            { SensitiveReads++; throw new InvalidOperationException("Sensitive setting must not be read."); }
+            return base.TryGet(key, out value);
+        }
     }
 }

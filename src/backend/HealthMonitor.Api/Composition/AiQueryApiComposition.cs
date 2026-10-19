@@ -24,17 +24,11 @@ internal static class AiQueryApiComposition
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-        const string key = "AiQueries:Enabled";
-        var root = configuration.GetSection("AiQueries");
-        var flag = root.GetSection("Enabled");
-        bool supplied = root.GetChildren().Any(child => child.Key.Equals("Enabled", StringComparison.OrdinalIgnoreCase));
-        string? raw = flag.Value;
-        bool enabled = false;
-        if (root.Value is not null || flag.GetChildren().Any()
-            || (supplied && (raw is null || raw != raw.Trim() || !bool.TryParse(raw, out enabled))))
-            throw new InvalidOperationException($"{key} must be a Boolean leaf value.");
-        if (enabled)
-            throw new InvalidOperationException($"{key} cannot be enabled until provider transport and all admission controls are implemented.");
+        // Keep premature activation ahead of active option/credential binding until every admission gate is composed.
+        if (AiQueryOptions.ReadEnabled(configuration))
+            throw new InvalidOperationException("AiQueries:Enabled cannot be enabled until provider transport and all admission controls are implemented.");
+        // A second flag read could observe a reload and bind credentials after the disabled guard passed.
+        services.AddSingleton(AiQueryOptions.Disabled);
         services.AddControllers().ConfigureApplicationPartManager(manager =>
             manager.FeatureProviders.Add(new AiQueryControllerFeatureProvider()));
         services.AddScoped<AiQueryBodyLimitFilter>();
