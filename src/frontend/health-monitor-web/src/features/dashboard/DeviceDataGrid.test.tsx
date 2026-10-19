@@ -1,18 +1,20 @@
 // @vitest-environment jsdom
 import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query'
 import type { PaginationState } from '@tanstack/react-table'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReadApi } from '../../api/readApi'
 import { DeviceDataGrid } from './DeviceDataGrid'
 import App from '../../App'
+import { useDashboardPreferences } from './dashboardPreferences'
 
 const clients: QueryClient[] = []
 beforeEach(() => focusManager.setFocused(true))
 afterEach(() => {
   cleanup(); clients.splice(0).forEach(client => client.clear())
-  focusManager.setFocused(undefined); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals()
+  useDashboardPreferences.setState(useDashboardPreferences.getInitialState(), true)
+  focusManager.setFocused(undefined); onlineManager.setOnline(true); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals()
 })
 
 /** Supplies only explicit fictional DTO data, never a database or real service response. */
@@ -239,4 +241,66 @@ it('supports ordinary cache invalidation without refetching the preserved inacti
   await act(async () => { await view.client.invalidateQueries({ queryKey: ['devices'] }) })
   await screen.findByText('Refreshed second page')
   expect(requestedPages(fetcher)).toEqual([1, 1, 2, 2])
+})
+/** Supplies both owned GET responses for shared-policy tests; every body is fresh and no service is contacted. */
+function dashboardResponse(input: RequestInfo | URL) {
+  const url = new URL(String(input))
+  if (url.pathname.endsWith('/metrics/summary')) return new Response(JSON.stringify({ total: 42, healthy: 31, degraded: 6, offline: 3, unknown: 2, averageLatencyMs: 12.5, sampleCount: 31, asOfUtc: '2026-10-18T12:00:00Z' }), { headers: { 'Content-Type': 'application/json' } })
+  return pageResponse(Number(url.searchParams.get('page')), Number(url.searchParams.get('pageSize')), 42)
+}
+
+it('pauses both panels across interval, focus and reconnect while manual actions and resume still work', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+  vi.stubEnv('VITE_API_BASE_URL', 'https://example.test')
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async input => dashboardResponse(input))
+  vi.stubGlobal('fetch', fetcher)
+  const client = new QueryClient(); clients.push(client)
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>)
+  await screen.findByText('42'); await screen.findByText('Device 1')
+  const counts = () => ({ metrics: fetcher.mock.calls.filter(([input]) => String(input).includes('/metrics/summary')).length, devices: fetcher.mock.calls.filter(([input]) => String(input).includes('/devices?')).length })
+  expect(counts()).toEqual({ metrics: 1, devices: 1 })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Automatic updates' }))
+  expect(screen.getByText('Paused')).toBeTruthy()
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15_000)
+    focusManager.setFocused(false); focusManager.setFocused(true)
+    onlineManager.setOnline(false); onlineManager.setOnline(true)
+  })
+  expect(counts()).toEqual({ metrics: 1, devices: 1 })
+  expect(screen.getByText('42')).toBeTruthy(); expect(screen.getByText('Device 1')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await waitFor(() => expect(counts()).toEqual({ metrics: 2, devices: 1 }))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh devices' }))
+  await waitFor(() => expect(counts()).toEqual({ metrics: 2, devices: 2 }))
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Next page' }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' })); await screen.findByText('Device 2')
+  expect(counts()).toEqual({ metrics: 2, devices: 3 })
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+  expect(counts()).toEqual({ metrics: 2, devices: 3 })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Automatic updates' }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+  await waitFor(() => expect(counts()).toEqual({ metrics: 3, devices: 4 }))
+  expect(screen.getByText('Every 5 seconds')).toBeTruthy()
+})
+
+it.each([false, true])('loads while already paused or after pausing a running initial request (pause after start: %s)', async pauseAfterStart => {
+  vi.stubEnv('VITE_API_BASE_URL', 'https://example.test')
+  useDashboardPreferences.setState({ pollingEnabled: pauseAfterStart })
+  const release: Array<() => void> = []
+  const signals: AbortSignal[] = []
+  const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => new Promise((resolve, reject) => {
+    const signal = init?.signal as AbortSignal; signals.push(signal)
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    release.push(() => resolve(dashboardResponse(input)))
+  }))
+  vi.stubGlobal('fetch', fetcher)
+  const client = new QueryClient(); clients.push(client)
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>)
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+  if (pauseAfterStart) fireEvent.click(screen.getByRole('checkbox', { name: 'Automatic updates' }))
+  expect((screen.getByRole('checkbox', { name: 'Automatic updates' }) as HTMLInputElement).checked).toBe(false)
+  expect(signals.every(signal => !signal.aborted)).toBe(true)
+  await act(async () => { release.forEach(finish => finish()) })
+  await screen.findByText('42'); await screen.findByText('Device 1')
+  expect(screen.getByText('Paused')).toBeTruthy(); expect(fetcher).toHaveBeenCalledTimes(2)
 })

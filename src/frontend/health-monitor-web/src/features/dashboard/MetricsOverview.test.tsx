@@ -5,12 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReadApi } from '../../api/readApi'
 import { MetricsOverview } from './MetricsOverview'
 import App from '../../App'
+import { useDashboardPreferences } from './dashboardPreferences'
 
 const summary = { total: 42, healthy: 31, degraded: 6, offline: 3, unknown: 2, averageLatencyMs: 12.5, sampleCount: 31, asOfUtc: '2026-10-18T12:00:00Z' }
 const clients: QueryClient[] = []
 beforeEach(() => focusManager.setFocused(true))
 afterEach(() => {
   cleanup(); clients.splice(0).forEach(client => client.clear())
+  useDashboardPreferences.setState(useDashboardPreferences.getInitialState(), true)
   focusManager.setFocused(undefined); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals()
 })
 

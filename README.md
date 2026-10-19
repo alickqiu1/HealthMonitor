@@ -7,6 +7,7 @@ HealthMonitor monitors a fictional infrastructure fleet using device registratio
 ## Functionality
 
 - Read-only fleet metrics and device grid, with page-size choices, previous/next controls, page totals and explicit stale-data warnings.
+- A shared Automatic updates control for both panels. Your choice is remembered in browser storage when available; pausing stops background refresh, while initial loading, manual refresh and page navigation still work. Requests already running may finish.
 - Device catalog and fleet summary APIs, with validated filtering, sorting and pagination.
 - Per-device details, telemetry history and incident history.
 - Atomic telemetry ingestion with idempotency, incident lifecycle processing and concurrency safeguards.
@@ -32,7 +33,7 @@ Infrastructure — port implementations, EF Core and PostgreSQL
                  separate Device and Telemetry contexts/schemas
 ```
 
-Device owns registrations; Telemetry owns measurements and incidents. Application contracts preserve that ownership while the API composes read results. AI translates text into a validated filter proposal; it has no database or write-use-case access. Applying a proposal will use the ordinary read APIs.
+TanStack Query owns response data and cache; Zustand holds only the shared, nonsecret updates preference. Device owns registrations; Telemetry owns measurements and incidents. Application contracts preserve that ownership while the API composes read results. AI translates text into a validated filter proposal; it has no database or write-use-case access. Applying a proposal will use the ordinary read APIs.
 
 | Location | Responsibility |
 | --- | --- |

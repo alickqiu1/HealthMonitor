@@ -1,3 +1,4 @@
+import { useDashboardPreferences } from './features/dashboard/dashboardPreferences'
 import { useState } from 'react'
 import type { PaginationState } from '@tanstack/react-table'
 import { createReadApi, ReadApiError } from './api/readApi'
@@ -7,6 +8,8 @@ import { DeviceDataGrid } from './features/dashboard/DeviceDataGrid'
 
 /** The first read-only dashboard slice; unavailable AI never gates ordinary monitoring reads. */
 function App() {
+  const pollingEnabled = useDashboardPreferences(state => state.pollingEnabled)
+  const setPollingEnabled = useDashboardPreferences(state => state.setPollingEnabled)
   // Current grid coordinates have one dashboard owner; Query alone owns response data.
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 })
   let api: ReadApi | undefined
@@ -23,7 +26,19 @@ function App() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-10">
-        {api ? <div className="space-y-12"><MetricsOverview api={api} /><DeviceDataGrid api={api} pagination={pagination} onPaginationChange={setPagination} /></div> : <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-6">
+        {api ? <div className="space-y-12">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm font-semibold">
+                <input type="checkbox" checked={pollingEnabled} onChange={event => setPollingEnabled(event.target.checked)} aria-describedby="automatic-updates-note"
+                  className="size-4 accent-sky-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700" />
+                Automatic updates
+              </label>
+              <span aria-live="polite" className="text-xs text-slate-500">{pollingEnabled ? 'Every 5 seconds' : 'Paused'}</span>
+            </div>
+            <p id="automatic-updates-note" className="mt-2 text-xs text-slate-600">Pauses background refresh only. Opening the dashboard, manual refresh and page changes still load data. Requests already running may finish.</p>
+          </div>
+          <MetricsOverview api={api} /><DeviceDataGrid api={api} pagination={pagination} onPaginationChange={setPagination} /></div> : <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-6">
           <h2 className="font-semibold">Connect the monitoring API</h2>
           <p className="mt-2 text-sm">{configurationError} See the project README for local setup.</p>
         </div>}

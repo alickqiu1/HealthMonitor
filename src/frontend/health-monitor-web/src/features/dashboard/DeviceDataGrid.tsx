@@ -1,3 +1,4 @@
+import { useDashboardPreferences } from './dashboardPreferences'
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
@@ -30,6 +31,7 @@ export function DeviceDataGrid({ api, pagination, onPaginationChange }: {
   pagination: PaginationState
   onPaginationChange: OnChangeFn<PaginationState>
 }) {
+  const pollingEnabled = useDashboardPreferences(state => state.pollingEnabled)
   const request = useMemo(() => ({ page: pagination.pageIndex + 1, pageSize: pagination.pageSize }), [pagination.pageIndex, pagination.pageSize])
   const [preservedIdentity, setPreservedIdentity] = useState(request)
   const query = useQuery({
@@ -37,7 +39,9 @@ export function DeviceDataGrid({ api, pagination, onPaginationChange }: {
     queryFn: ({ signal }) => api.getDevices(request, signal),
     placeholderData: keepPreviousData,
     staleTime: 2_000,
-    refetchInterval: 5_000,
+    refetchInterval: pollingEnabled ? 5_000 : false,
+    refetchOnWindowFocus: pollingEnabled,
+    refetchOnReconnect: pollingEnabled,
     refetchIntervalInBackground: false,
     retry: false,
   })

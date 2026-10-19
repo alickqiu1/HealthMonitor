@@ -1,14 +1,18 @@
+import { useDashboardPreferences } from './dashboardPreferences'
 import { useQuery } from '@tanstack/react-query'
 import { ReadApiError } from '../../api/readApi'
 import type { ReadApi } from '../../api/readApi'
 
 /** Shows global active-fleet metrics. Query owns cancellation, cache and polling; UI never mirrors that data in another store. */
 export function MetricsOverview({ api }: { api: ReadApi }) {
+  const pollingEnabled = useDashboardPreferences(state => state.pollingEnabled)
   const query = useQuery({
     // Never reuse a cached summary from a different configured API origin.
     queryKey: ['fleet-metrics', api.origin],
     queryFn: ({ signal }) => api.getMetrics(signal),
-    refetchInterval: 5_000,
+    refetchInterval: pollingEnabled ? 5_000 : false,
+    refetchOnWindowFocus: pollingEnabled,
+    refetchOnReconnect: pollingEnabled,
     refetchIntervalInBackground: false,
     retry: false,
   })
@@ -50,7 +54,7 @@ export function MetricsOverview({ api }: { api: ReadApi }) {
           <p>Fresh latency samples: {data.sampleCount}</p>
         </div>
         {/* A failed refresh retains data, so freshness must remain visible rather than presenting cached values as current. */}
-        <p className="text-sm text-slate-500">{query.isFetching ? 'Refreshing…' : query.isError ? 'Summary may be stale. Retry to update.' : 'Refreshes every 5 seconds while this page is active.'}</p>
+        <p className="text-sm text-slate-500">{query.isFetching ? 'Refreshing…' : query.isError ? 'Summary may be stale. Retry to update.' : pollingEnabled ? 'Refreshes every 5 seconds while this page is active.' : 'Automatic updates are paused.'}</p>
       </>}
     </section>
   )
