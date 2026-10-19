@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using HealthMonitor.Api.AiQueries;
 using HealthMonitor.Api.Composition;
 using HealthMonitor.Application.AiQueries;
 using HealthMonitor.IntegrationTests.Infrastructure;
@@ -170,7 +171,7 @@ public sealed class AiQueryContractTests
         Assert.Equal(2, host.Generation.Calls.Count); NoStorage(host); SafeLogs(host);
     }
 
-    /// <summary>Distinguishes owned provider failures from invalid output and unexpected faults without exposing request or provider content.</summary>
+    /// <summary>Distinguishes owned local/provider failures from invalid output and unexpected faults without exposing request or provider content.</summary>
     [Fact]
     public async Task TypedAndUnexpectedFailures_SanitizedAndNoStore()
     {
@@ -201,7 +202,32 @@ public sealed class AiQueryContractTests
             // Provider failures do not acquire local rate-limit semantics or forward provider headers.
             Assert.False(response.Headers.Contains("Retry-After"));
         }
-        Assert.Equal(8, host.Generation.Calls.Count); NoStorage(host); SafeLogs(host);
+        Assert.Equal(8, host.Generation.Calls.Count);
+        foreach (bool synchronous in new[] { false, true })
+        foreach (var (error, status, code, title, retryAfter) in new (AiAdmissionRejectedException, HttpStatusCode, string, string, string?)[]
+        {
+            (new(AiAdmissionRejectedException.Rejection.RateLimited, 60), HttpStatusCode.TooManyRequests,
+                "ai_rate_limited", "The AI translation request limit was reached.", "60"),
+            (new(AiAdmissionRejectedException.Rejection.BudgetExhausted, 43200), HttpStatusCode.TooManyRequests,
+                "ai_budget_exhausted", "The daily AI translation budget is exhausted.", "43200"),
+            (new(AiAdmissionRejectedException.Rejection.AdmissionUnavailable), HttpStatusCode.ServiceUnavailable,
+                "ai_admission_unavailable", "AI admission is unavailable.", null),
+            (new(AiAdmissionRejectedException.Rejection.BudgetUnavailable), HttpStatusCode.ServiceUnavailable,
+                "ai_budget_unavailable", "The AI usage budget is unavailable.", null)
+        })
+        {
+            // These controlled exceptions prove mapping only; actual admission/counter HTTP integration is a later gate.
+            host.Generation.Generate = (_, _, _) => synchronous ? throw error : Task.FromException<StructuredQueryProposal?>(error);
+            int before = host.Generation.Calls.Count;
+            using var response = await host.PostAsync(Payload(Canary));
+            await Problem(host, response, status, code);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(title, document.RootElement.GetProperty("title").GetString());
+            if (retryAfter is null) Assert.False(response.Headers.Contains("Retry-After"));
+            else Assert.Equal(retryAfter, Assert.Single(response.Headers.GetValues("Retry-After")));
+            Assert.Equal(before + 1, host.Generation.Calls.Count);
+        }
+        Assert.Equal(16, host.Generation.Calls.Count); NoStorage(host); SafeLogs(host);
     }
 
     [Fact]
