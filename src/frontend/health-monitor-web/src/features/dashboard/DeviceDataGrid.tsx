@@ -150,14 +150,18 @@ export function DeviceDataGrid({ api, state, onStateChange }: {
         {query.isError ? 'Retry devices' : 'Refresh devices'}
       </button>
     </div>
-    <form aria-label="Search active devices" onSubmit={event => { event.preventDefault(); applySearch(draft) }} className="flex flex-wrap items-end gap-3">
-      <div className="flex-1"><label htmlFor="device-search" className="block text-sm font-semibold">Search name or asset tag</label>
-        <input id="device-search" type="search" value={draft} onChange={event => { setDraft(event.target.value); setSearchError('') }}
-          aria-describedby="device-search-help" aria-invalid={searchError ? true : undefined}
-          className="mt-1 w-full rounded border border-slate-300 bg-white p-2 focus-visible:outline-2 focus-visible:outline-sky-700" />
-        <p id="device-search-help" className="mt-1 text-xs text-slate-500">Searches all active devices, up to 100 characters. Fleet metrics stay global.</p></div>
-      <button type="submit" className="rounded border border-slate-300 bg-white px-4 py-2 font-semibold focus-visible:outline-2 focus-visible:outline-sky-700">Search</button>
-      <button type="button" onClick={() => applySearch('')} className="rounded border border-slate-300 bg-white px-4 py-2 focus-visible:outline-2 focus-visible:outline-sky-700">Clear search</button>
+    <form aria-label="Search active devices" onSubmit={event => { event.preventDefault(); applySearch(draft) }} className="space-y-2">
+      {/* Help sits outside the control row so its height cannot shift the buttons below the input. */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1 basis-64"><label htmlFor="device-search" className="block text-sm font-semibold">Search name or asset tag</label>
+          <input id="device-search" type="search" value={draft} onChange={event => { setDraft(event.target.value); setSearchError('') }}
+            aria-describedby="device-search-help" aria-invalid={searchError ? true : undefined}
+            className="mt-1 w-full rounded border border-slate-300 bg-white p-2 focus-visible:outline-2 focus-visible:outline-sky-700" />
+        </div>
+        <button type="submit" className="rounded border border-slate-300 bg-white px-4 py-2 font-semibold focus-visible:outline-2 focus-visible:outline-sky-700">Search</button>
+        <button type="button" onClick={() => applySearch('')} className="rounded border border-slate-300 bg-white px-4 py-2 focus-visible:outline-2 focus-visible:outline-sky-700">Clear search</button>
+      </div>
+      <p id="device-search-help" className="text-xs text-slate-500">Searches all active devices, up to 100 characters. Fleet metrics stay global.</p>
     </form>
     {searchError && <p role="alert">{searchError}</p>}
     <div className="flex flex-wrap items-end gap-3">
