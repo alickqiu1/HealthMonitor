@@ -14,7 +14,7 @@ HealthMonitor monitors a fictional infrastructure fleet using device registratio
 - A device details panel with registration/health facts, up to 10 recent measurements from the server's trailing 24-hour window, and up to 10 retained incidents across lifecycle states. Each section has independent refresh, error and stale-data handling; the previews do not represent complete lifetime history.
 - Atomic telemetry ingestion with idempotency, incident lifecycle processing and concurrency safeguards.
 - An optional telemetry producer, retention processing and a separately controlled local simulation API.
-- A provider-neutral AI query contract, strict proposal validation and bounded Groq transport. Local admission controls have automated coverage, but remaining configuration, operational controls and activation are incomplete. No live model evaluation is claimed.
+- A provider-neutral AI query contract, strict proposal validation and bounded Groq/OpenAI transports. Local admission controls have automated coverage, but remaining configuration, operational controls and activation are incomplete. No live model evaluation is claimed.
 
 All inventory and telemetry are synthetic. This application is not connected to real infrastructure and should not be used for confidential operational data without a separately designed access policy.
 
@@ -73,7 +73,7 @@ Planned flow: enter a natural-language request, review a server-validated previe
 
 GroqCloud with `openai/gpt-oss-20b` is the selected implementation target. Each installation must use its own provider account and backend-stored API credentials, independent of the project owner's account. The architecture proposes `AiQueries:ApiKey` in API user-secrets or hosting secrets; production credential loading and activation are still unfinished. Never put provider credentials in browser code or Vite environment variables. Setting a key or enabling the flag alone does not activate AI.
 
-Configuring another LLM/provider is a requested, planned capability, not implemented support. The existing adapter pins the Groq endpoint and model; a different key cannot select another provider. Another model or provider needs reviewed configuration/protocol support and, where necessary, a validated adapter behind the existing Application port. Keep one selected provider/model per installation, without automatic fallback or arbitrary browser-supplied endpoints. See the [provider decision and portability status](docs/development/AiProviderDecision.md#installation-credentials-and-provider-portability) and [implementation progress](docs/development/ImplementationProgress.md).
+Groq and OpenAI now have implemented, controlled-tested transports behind fixed supported profiles: Groq uses `openai/gpt-oss-20b`; OpenAI uses `gpt-5.4-mini-2026-03-17`. The configuration contract selects one profile per installation, but production provider wiring and AI activation are still unfinished. No live-provider result is claimed. Other models/providers are not automatically compatible: they need a reviewed profile/protocol or adapter behind the existing Application port. There is no automatic fallback or arbitrary browser-supplied endpoint, and changing only a key cannot select another provider. See the [provider decision and portability status](docs/development/AiProviderDecision.md#installation-credentials-and-provider-portability) and [implementation progress](docs/development/ImplementationProgress.md).
 
 ## Get started without a database
 
