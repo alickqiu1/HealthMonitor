@@ -18,6 +18,26 @@ HealthMonitor monitors a fictional infrastructure fleet using device registratio
 
 All inventory and telemetry are synthetic. This application is not connected to real infrastructure and should not be used for confidential operational data without a separately designed access policy.
 
+## Screenshots
+
+Original browser captures provided by the owner from the running local application, using synthetic data. These were captured at different moments; measurements and incident states can differ between images.
+
+Fleet overview with 24 devices and health totals:
+
+![Synthetic fleet overview showing 24 active devices, health totals and average latency](docs/screenshots/fleet-overview.png)
+
+Paged inventory with measurements and per-device details:
+
+![Device grid showing health, latency, CPU, View details buttons and pagination](docs/screenshots/device-grid.png)
+
+Device registration, current measurements and recent observation history:
+
+![Open device details panel showing registration, health, CPU and recent measurements](docs/screenshots/device-details.png)
+
+Retained open and resolved incidents in the scrolled details panel:
+
+![Device incident history showing open and resolved connectivity, CPU and latency incidents](docs/screenshots/device-incidents.png)
+
 ## Architecture
 
 The backend is a .NET 10 modular application with a single ASP.NET Core facade:
@@ -123,4 +143,4 @@ Work proceeds in small increments with local checks and GitHub Actions verificat
 - [Technical Architecture Plan, Edition 1.5](docs/architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md): authoritative requirements, module boundaries, setup and operational procedures.
 - [AI provider decision](docs/development/AiProviderDecision.md): selected provider/model, rationale and remaining evaluation limits.
 
-The remaining bounded delivery work is a verified, populated synthetic-data demonstration and a concise walkthrough with actual screenshots. Device-details native keyboard/focus behavior and layout still require browser acceptance; source/controlled-test evidence is recorded in the progress document. Remaining AI ingress, credential composition, counter provisioning and activation work stays open; resume it from the progress document rather than treating tested components as an enabled feature.
+The bounded synthetic-data demonstration, device details panel, startup walkthrough and actual screenshots are delivered. The owner reported that the populated output and details look correct and that Tab navigation works. Escape/focus-return behavior and specific narrow-screen layouts have not been manually confirmed; the progress document records these limits separately from automated coverage. Remaining AI ingress, credential composition, counter provisioning and activation work stays open; resume it from the progress document rather than treating tested components as an enabled feature.
