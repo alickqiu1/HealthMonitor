@@ -67,6 +67,14 @@ TanStack Query owns response data and cache; Zustand holds ephemeral device sele
 | `tests` | Backend unit, HTTP and isolated PostgreSQL tests |
 | `scripts` | Strict integration-result verification and its database-free self-tests |
 
+## AI query status
+
+Planned flow: enter a natural-language request, review a server-validated preview of supported filters and sorting, then select **Apply** to fetch matching rows through the existing device-grid GET API. The model never executes SQL or accesses the database. Manual filters remain available; grid refresh does not call the model again. The AI panel, translation client and Apply integration are not implemented, and the backend AI route remains disabled.
+
+GroqCloud with `openai/gpt-oss-20b` is the selected implementation target. Each installation must use its own provider account and backend-stored API credentials, independent of the project owner's account. The architecture proposes `AiQueries:ApiKey` in API user-secrets or hosting secrets; production credential loading and activation are still unfinished. Never put provider credentials in browser code or Vite environment variables. Setting a key or enabling the flag alone does not activate AI.
+
+Configuring another LLM/provider is a requested, planned capability, not implemented support. The existing adapter pins the Groq endpoint and model; a different key cannot select another provider. Another model or provider needs reviewed configuration/protocol support and, where necessary, a validated adapter behind the existing Application port. Keep one selected provider/model per installation, without automatic fallback or arbitrary browser-supplied endpoints. See the [provider decision and portability status](docs/development/AiProviderDecision.md#installation-credentials-and-provider-portability) and [implementation progress](docs/development/ImplementationProgress.md).
+
 ## Get started without a database
 
 Install the .NET SDK specified in [global.json](global.json) (10.0.400, with serviced patch roll-forward). From the repository root:
