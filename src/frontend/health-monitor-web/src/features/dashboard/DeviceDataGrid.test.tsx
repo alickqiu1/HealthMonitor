@@ -621,3 +621,20 @@ it('ignores late sort range results at equal coordinates without changing the ne
   expect(screen.getByRole('button', { name: 'Sort by CPU descending' }).closest('th')?.getAttribute('aria-sort')).toBe('ascending')
   expect(filterRequests(fetcher).at(-1)).toMatchObject({ sort: 'cpuPercent', page: '2' })
 })
+
+
+/** An external AI action resets unsubmitted text even when the applied search itself is unchanged. */
+it('derives external search reset identity without losing ordinary draft editing', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => pageResponse(1))
+  const client = new QueryClient(); clients.push(client)
+  const state: DeviceGridState = { pagination: { pageIndex: 0, pageSize: 25 }, q: '', site: '', type: '', status: '', sorting: [{ id: 'displayName', desc: false }] }
+  const view = (reset: number) => <QueryClientProvider client={client}><DeviceDataGrid api={createReadApi('https://example.test', fetcher)} state={state} onStateChange={() => {}} searchResetKey={reset} /></QueryClientProvider>
+  const rendered = render(view(0))
+  const input = screen.getByLabelText('Search name or asset tag') as HTMLInputElement
+  fireEvent.change(input, { target: { value: 'unsubmitted' } })
+  rendered.rerender(view(0)); expect(input.value).toBe('unsubmitted')
+  rendered.rerender(view(1)); expect(input.value).toBe('')
+  fireEvent.change(input, { target: { value: 'new manual draft' } })
+  rendered.rerender(view(1)); expect(input.value).toBe('new manual draft')
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+})

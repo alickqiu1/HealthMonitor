@@ -55,7 +55,7 @@ Infrastructure — port implementations, EF Core and PostgreSQL
                  separate Device and Telemetry contexts/schemas
 ```
 
-TanStack Query owns response data and cache; Zustand holds ephemeral device selection and the shared, nonsecret updates preference; only the updates choice is persisted. Device owns registrations; Telemetry owns measurements and incidents. Application contracts preserve that ownership while the API composes read results. AI translates text into a validated filter proposal; it has no database or write-use-case access. Applying a proposal will use the ordinary read APIs.
+TanStack Query owns response data and cache; Zustand holds ephemeral device selection and the shared, nonsecret updates preference; only the updates choice is persisted. Device owns registrations; Telemetry owns measurements and incidents. Application contracts preserve that ownership while the API composes read results. AI translates text into a validated filter proposal; it has no database or write-use-case access. Applying a proposal uses the ordinary read APIs.
 
 | Location | Responsibility |
 | --- | --- |
@@ -69,7 +69,7 @@ TanStack Query owns response data and cache; Zustand holds ephemeral device sele
 
 ## AI query status
 
-Planned flow: enter a natural-language request, review a server-validated preview of supported filters and sorting, then select **Apply** to fetch matching rows through the existing device-grid GET API. The model never executes SQL or accesses the database. Manual filters remain available; grid refresh does not call the model again. The AI panel, translation client and Apply integration are not implemented. The backend translation route is optional and disabled by default.
+Enter a natural-language request, select **Preview filters**, review the normalized supported filters and sorting, then select **Apply proposed filters** to fetch matching rows through the existing device-grid GET API. The model never executes SQL or accesses the database. Manual filters remain available; grid refresh does not call the model again. The optional translation route is disabled by default. If it is unavailable, the assistant displays a safe message and manual filtering continues. **Clear AI filters** clears the prompt, preview and applied filters while preserving the selected page size. Editing a prompt invalidates its previous preview; stale responses cannot enable Apply.
 
 GroqCloud with `openai/gpt-oss-20b` is the selected implementation target. Each installation must use its own provider account and backend-stored API credentials, independent of the project owner's account. Set `AiQueries:ApiKey` only in API user-secrets or hosting secrets; never publish its value. Never put provider credentials in browser code or Vite environment variables. Complete the installation settings and budget provisioning before setting `AiQueries:Enabled=true`; restart to capture the installation snapshot.
 
@@ -159,4 +159,4 @@ Work proceeds in small increments with local checks and GitHub Actions verificat
 - [Technical Architecture Plan, Edition 1.5](docs/architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md): authoritative requirements, module boundaries, setup and operational procedures.
 - [AI provider decision](docs/development/AiProviderDecision.md): selected provider/model, rationale and remaining evaluation limits.
 
-The bounded synthetic-data demonstration, device details panel, startup walkthrough and actual screenshots are delivered. The owner reported that the populated output and details look correct and that Tab navigation works. Escape/focus-return behavior and specific narrow-screen layouts have not been manually confirmed; the progress document records these limits separately from automated coverage. Frontend AI translation/preview/Apply and operational provider/deployment acceptance remain open; resume it from the progress document rather than treating tested components as an enabled feature.
+The bounded synthetic-data demonstration, device details panel, startup walkthrough and actual screenshots are delivered. The owner reported that the populated output and details look correct and that Tab navigation works. Escape/focus-return behavior and specific narrow-screen layouts have not been manually confirmed; the progress document records these limits separately from automated coverage. Operational provider/deployment acceptance and a live browser-to-AI walkthrough remain open; resume it from the progress document rather than treating tested components as an enabled feature.

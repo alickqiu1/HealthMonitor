@@ -43,15 +43,22 @@ function pageKey(origin: string, request: GridRequest) {
  * Presents one server-owned page, with one applied search/pagination state supplied by the dashboard.
  * Only a prior request identity is retained locally; response rows remain exclusively in Query's cache.
  */
-export function DeviceDataGrid({ api, state, onStateChange }: {
+export function DeviceDataGrid({ api, state, onStateChange, searchResetKey = 0 }: {
   api: ReadApi
   state: DeviceGridState
   onStateChange: OnChangeFn<DeviceGridState>
+  searchResetKey?: number
 }) {
   const { pagination, q, site, type, status, sorting } = state
   // Draft editing never starts requests; only explicit submission changes the applied query.
-  const [draft, setDraft] = useState(q)
-  const [searchError, setSearchError] = useState('')
+  // An explicit external Apply/Clear discards an unsubmitted draft even if its applied q is unchanged.
+  // Deriving from identity avoids effects/render-time writes, while polling/page/filter changes preserve typing.
+  const [draftState, setDraftState] = useState({ q, key: searchResetKey, text: q })
+  const sameDraft = draftState.q === q && draftState.key === searchResetKey
+  const draft = sameDraft ? draftState.text : q
+  const setDraft = (text: string) => setDraftState({ q, key: searchResetKey, text })
+  const [storedSearchError, setSearchError] = useState('')
+  const searchError = sameDraft ? storedSearchError : ''
   const pollingEnabled = useDashboardPreferences(state => state.pollingEnabled)
   const request = useMemo(() => requestFor(state), [state])
   const [preservedIdentity, setPreservedIdentity] = useState(request)
