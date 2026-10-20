@@ -82,6 +82,10 @@ $fixtures = @{
         Class = 'HealthMonitor.IntegrationTests.Api.AiQueryContractTests'
         Cases = @('Disabled_AbsentAndCannotEnable', 'Ready_CanonicalWireAndZeroStorage', 'ClarificationAndUnsupported_FixedWire', 'InvalidPromptAndQuery_NoGeneration', 'StrictBodyShape_NoGeneration', 'BodyByteBounds_KnownStreamedUtf8', 'TypedAndUnexpectedFailures_SanitizedAndNoStore', 'Cancellation_ForwardsAndDrains', 'Cors_PostOnlyExactOrigins', 'SingleSubmission_GeneratesOnceAndSubsequentGetDoesNotRegenerate', 'Admission_InvalidRequests_DoNotConsumeBudget', 'Admission_ClientLimit_IgnoresSpoofedForwardingHeaders', 'Admission_GlobalLimit_UsesTrustedConnectionIdentity', 'Admission_Concurrency_DoesNotQueueOrReleaseOnClientAbort', 'Admission_DailyExhaustion_HasUtcRetryAndNoProviderCall', 'Admission_MissingOrCorruptCounter_FailsClosed', 'Admission_ProviderFailuresRemainChargedWithoutRetry', 'Admission_RestartPreservesCounter', 'Admission_ReadyThenGet_DoesNotRegenerate')
     }
+    AiIngressHost = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.AiIngressEffectiveHostTests'
+        Cases = @('DirectPeer_IgnoresSpoofedHeaders_ReusesClientWindow', 'KnownProxy_SymmetricHeaders_SelectVerifiedSnapshot', 'UnknownProxy_CannotSelectClientFromHeaders', 'MultiplexedHttp2_OneConnection_PreservesOverlappingRequestIdentities', 'MissingCaptureOrPriorRewrite_DeniesWithoutCharge_PreservesReads', 'AutomaticForwarding_TrueOrMalformed_RejectsBeforeBinding', 'PostBindAndBodyFailure_CloseListener_PreserveOriginalFailure')
+    }
     SimulationHost = @{
         Class = 'HealthMonitor.IntegrationTests.Api.SimulationEffectiveHostTests'
         Cases = @('Loopback_AllowsLocalPost_ClosesListener', 'KestrelWildcardOverride_DeniesPost_ClosesListener', 'KestrelLoopbackOverride_AllowsPostDespiteWildcardUrl_ClosesListener', 'StartupAndBodyFailure_StillClosesListenerAndPreservesFailure')
@@ -198,9 +202,24 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract', 'AiIngressHost')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
+    # The new real-connection inventory must fail even when synthetic report counters look consistent.
+    foreach ($outcome in @('Failed', 'NotExecuted')) {
+        $doc = New-SyntheticReport 'AiIngressHost'
+        $doc.DocumentElement.ChildNodes[0].FirstChild.SetAttribute('outcome', $outcome)
+        Assert-Report "AI ingress $outcome" $doc 'AiIngressHost' $false
+    }
+    $doc = New-SyntheticReport 'AiIngressHost'
+    [void]$doc.DocumentElement.ChildNodes[0].RemoveChild($doc.DocumentElement.ChildNodes[0].FirstChild)
+    [void]$doc.DocumentElement.ChildNodes[1].RemoveChild($doc.DocumentElement.ChildNodes[1].FirstChild)
+    foreach ($key in @('total', 'executed', 'passed')) { $doc.DocumentElement.ChildNodes[2].FirstChild.SetAttribute($key, '6') }
+    Assert-Report 'AI ingress missing case with consistent counters' $doc 'AiIngressHost' $false
+    $doc = New-SyntheticReport 'AiIngressHost'
+    $doc.DocumentElement.ChildNodes[1].ChildNodes[1].FirstChild.SetAttribute('name', $fixtures.AiIngressHost.Cases[0])
+    $doc.DocumentElement.ChildNodes[1].ChildNodes[1].SetAttribute('name', $fixtures.AiIngressHost.Class + '.' + $fixtures.AiIngressHost.Cases[0])
+    Assert-Report 'AI ingress duplicate method' $doc 'AiIngressHost' $false
     foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {
         $doc = New-SyntheticReport 'Catalog'
         $doc.DocumentElement.ChildNodes[0].FirstChild.SetAttribute('outcome', $outcome)

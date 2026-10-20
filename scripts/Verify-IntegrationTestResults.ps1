@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract', 'AiIngressHost')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -113,6 +113,18 @@ $inventories = @{
             Admission_ProviderFailuresRemainChargedWithoutRetry = @('')
             Admission_RestartPreservesCounter = @('')
             Admission_ReadyThenGet_DoesNotRegenerate = @('')
+        }
+    }
+    AiIngressHost = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.AiIngressEffectiveHostTests'
+        Methods = @{
+            DirectPeer_IgnoresSpoofedHeaders_ReusesClientWindow = @('')
+            KnownProxy_SymmetricHeaders_SelectVerifiedSnapshot = @('')
+            UnknownProxy_CannotSelectClientFromHeaders = @('')
+            MultiplexedHttp2_OneConnection_PreservesOverlappingRequestIdentities = @('')
+            MissingCaptureOrPriorRewrite_DeniesWithoutCharge_PreservesReads = @('')
+            AutomaticForwarding_TrueOrMalformed_RejectsBeforeBinding = @('')
+            PostBindAndBodyFailure_CloseListener_PreserveOriginalFailure = @('')
         }
     }
     SimulationHost = @{
