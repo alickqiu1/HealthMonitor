@@ -1,9 +1,37 @@
 
+using HealthMonitor.Api.AiQueries;
 using HealthMonitor.Api.Composition;
 using HealthMonitor.Api.Provisioning;
 using Npgsql;
 
+// Reject a misplaced maintenance flag before builder argument parsing can route it into ordinary startup.
+bool provisionAiBudget = args.Contains("--provision-ai-budget", StringComparer.Ordinal);
+if (provisionAiBudget && args.Length != 1)
+{
+    Console.Error.WriteLine("Use --provision-ai-budget as the sole command argument.");
+    Environment.ExitCode = 1;
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Explicit filesystem maintenance exits before database registration or HTTP/worker startup.
+// CreateBuilder still loads the normal configuration providers; the helper reads only the counter-path value.
+if (provisionAiBudget)
+{
+    try
+    {
+        await AiBudgetProvisioner.CreateAsync(builder.Configuration, builder.Environment, TimeProvider.System);
+        Console.WriteLine("AI budget counter created. AI enablement is a separate operation.");
+    }
+    catch (InvalidOperationException error)
+    {
+        // Only the helper's owned fixed diagnostic is emitted, without original exceptions or filesystem paths.
+        Console.Error.WriteLine(error.Message);
+        Environment.ExitCode = 1;
+    }
+    return;
+}
 
 // ------------------------------------------------------------
 // 1. Private device catalog provisioning

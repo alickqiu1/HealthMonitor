@@ -117,7 +117,9 @@ jobs:
           dotnet test \
             tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj \
             --configuration Release \
-            --no-restore
+            --no-restore \
+            --logger "trx;LogFileName=unit.trx" \
+            --results-directory artifacts/test-results/unit
 
       - name: Build integration-test project
         run: |

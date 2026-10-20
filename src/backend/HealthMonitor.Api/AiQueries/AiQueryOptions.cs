@@ -72,11 +72,23 @@ internal sealed class AiQueryOptions
         StructuredQueryProviderProfile profile;
         try { profile = StructuredQueryProviderProfile.FromName(supplied.Contains("Provider") ? Leaf(root, "Provider") : "Groq"); }
         catch (ArgumentException) { throw Invalid("Provider"); }
-        string path = CounterPath(Leaf(root, "BudgetCounterPath"), environment);
+        string path = ReadBudgetCounterPath(configuration, environment);
         string key = Leaf(root, "ApiKey");
         // Match the transport's Bearer-token grammar; accepting a shape does not verify account access.
         if (key.Any(value => !char.IsAsciiLetterOrDigit(value) && !"-._~+/=".Contains(value))) throw Invalid("ApiKey");
         return new(true, profile, key, path);
+    }
+
+    /// <summary>Reads only the counter path for explicit provisioning, independently of enablement or provider credentials.</summary>
+    /// <param name="configuration">Configuration whose BudgetCounterPath leaf is the only value inspected.</param>
+    /// <param name="environment">Actual host paths used for the same lexical web-root exclusion as active binding.</param>
+    /// <returns>The normalized absolute path; this does not prove ACLs, ownership or safe storage.</returns>
+    /// <exception cref="ArgumentNullException">Configuration is null.</exception>
+    /// <exception cref="InvalidOperationException">The path or host location is invalid.</exception>
+    internal static string ReadBudgetCounterPath(IConfiguration configuration, IWebHostEnvironment? environment)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        return CounterPath(Leaf(configuration.GetSection("AiQueries"), "BudgetCounterPath"), environment);
     }
 
     /// <summary>Reads one required nonempty leaf without returning its value in an exception.</summary>

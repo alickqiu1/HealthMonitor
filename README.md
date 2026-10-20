@@ -75,16 +75,24 @@ GroqCloud with `openai/gpt-oss-20b` is the selected implementation target. Each 
 
 Groq and OpenAI now have implemented, controlled-tested transports behind fixed supported profiles: Groq uses `openai/gpt-oss-20b`; OpenAI uses `gpt-5.4-mini-2026-03-17`. The configuration contract selects one profile per installation, but production provider wiring and AI activation are still unfinished. No live-provider result is claimed. Other models/providers are not automatically compatible: they need a reviewed profile/protocol or adapter behind the existing Application port. There is no automatic fallback or arbitrary browser-supplied endpoint, and changing only a key cannot select another provider. See the [provider decision and portability status](docs/development/AiProviderDecision.md#installation-credentials-and-provider-portability) and [implementation progress](docs/development/ImplementationProgress.md).
 
+### Initialize the AI budget counter once
+
+Pre-create a private persisted directory outside the actual served web root, accessible only to the API account. Configure `AiQueries:BudgetCounterPath` to a new absolute file path in that directory through API operator configuration. On Unix, newly created counter/sidecar files use owner read/write permissions; Windows inherits the presecured parent ACL. The command does not grant permissions or prove directory ownership, ACLs, hosting exposure or resistance to path swaps. It rejects linked/reparse parents and sidecars; the trusted private parent remains an operational prerequisite.
+
+From the repository root, run `dotnet run --project src/backend/HealthMonitor.Api --no-launch-profile -- --provision-ai-budget`. Supply the path through the configuration available to that environment. Use the command flag as the sole argument. The helper reads only the counter path; the standard application builder still loads its normal configuration providers before that helper runs. The command exits before database registration, migrations, producer/retention or HTTP startup. It does not enable AI, validate a real provider account or call a model.
+
+The command takes the runtime's exclusive stable `.lock` and creates only a new version-1 counter with the current UTC day and count zero. Every existing counter is refused, including old, nonzero, corrupt, partial or linked files. Never delete/reset an existing counter to bypass the daily budget. If cancellation or I/O fails, inspect the retained state before retrying; a partial or complete new file may exist. The file contents are flushed, but the parent directory is not fsynced; crash/power-loss durability is not verified. The stable sidecar is retained. Missing/corrupt state still fails closed in runtime; there is no automatic bootstrap or repair. Production AI activation remains blocked pending complete runtime wiring and acceptance.
+
 ## Get started without a database
 
 Install the .NET SDK specified in [global.json](global.json) (10.0.400, with serviced patch roll-forward). From the repository root:
 
 ```powershell
 dotnet build tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj -c Release
-dotnet test tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj -c Release --no-build
+dotnet test tests/HealthMonitor.UnitTests/HealthMonitor.UnitTests.csproj -c Release --no-build --filter "Platform!=Unix"
 ```
 
-These commands build the backend and run unit tests without PostgreSQL, provider credentials or a running application. They may restore NuGet packages. Build backend projects explicitly: the solution also contains an independent JavaScript project.
+These Windows commands build the backend and run unit tests without PostgreSQL, provider credentials or a running application. Four explicitly Unix-only provisioning/link/permission cases are excluded on Windows; Linux CI runs the unfiltered suite, and Linux local runs should omit the filter. They may restore NuGet packages. Build backend projects explicitly: the solution also contains an independent JavaScript project.
 
 To start the frontend, use Node.js 24.15 or newer within the 24 LTS line, with npm in a separate terminal. Create `.env.local` from `.env.example` if it does not already exist, or update only its public `VITE_API_BASE_URL`. The example matches the checked-in API HTTPS profile (`https://localhost:7080`); it contains no provider credentials:
 
