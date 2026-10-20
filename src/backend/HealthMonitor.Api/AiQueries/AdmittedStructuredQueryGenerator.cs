@@ -7,7 +7,8 @@ namespace HealthMonitor.Api.AiQueries;
 /// <summary>Reserves local admission and daily budget before exactly one provider attempt through the existing Application port.</summary>
 /// <remarks>This unregistered, request-scoped decorator must be consumed through TranslateDeviceQuery, which validates
 /// and trims the prompt before this port is reached. It does not duplicate Application's business validator.
-/// The supplied HttpContext is scoped, never captured by a singleton; only trusted Connection.RemoteIpAddress is read.
+/// The supplied HttpContext is scoped, never captured by a singleton; only the owned ingress identity snapshot is read.
+/// Missing or unavailable metadata fails closed before any admission lease, persistent reservation or provider call.
 /// Policy, counter, inner provider and UTC clock are borrowed resources owned by future composition. The clock must
 /// be the same one used by the counter. No database, secret store, forwarding header or HTTP error mapping is accessed.</remarks>
 internal sealed class AdmittedStructuredQueryGenerator : IStructuredQueryGenerator
@@ -48,7 +49,11 @@ internal sealed class AdmittedStructuredQueryGenerator : IStructuredQueryGenerat
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            using var lease = policy.TryEnter(context.Connection.RemoteIpAddress, cancellationToken);
+            // Mutable connection metadata and headers cannot replace the ingress-verified identity or evade its client window.
+            var identity = context.Features.Get<AiClientIdentity>();
+            var address = identity is { IsVerified: true } ? identity.GetAddress() : null;
+            if (address is null) throw new AiAdmissionRejectedException(Rejection.AdmissionUnavailable);
+            using var lease = policy.TryEnter(address, cancellationToken);
             switch (lease.Status)
             {
                 case AiAdmissionPolicy.Outcome.RateLimited:

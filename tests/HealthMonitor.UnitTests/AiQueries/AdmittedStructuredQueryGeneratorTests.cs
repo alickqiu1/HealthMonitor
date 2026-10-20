@@ -30,7 +30,7 @@ public sealed class AdmittedStructuredQueryGeneratorTests
     {
         await using var setup = new Setup();
         foreach (string? prompt in new[] { null, "", " \t ", new string('x', 501) })
-            await Assert.ThrowsAsync<InvalidAiPromptException>(() => setup.Consumer().TranslateAsync(prompt!, CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidAiPromptException>(() => setup.Consumer(configure: context => context.Features.Set<AiClientIdentity>(null)).TranslateAsync(prompt!, CancellationToken.None));
         Assert.Empty(setup.Provider.Calls); Assert.Equal(0, setup.Count());
         Assert.False(File.Exists(setup.Path + ".lock"));
         for (int index = 0; index < 5; index++) await setup.Consumer().TranslateAsync(new string('x', 500), CancellationToken.None);
@@ -48,6 +48,54 @@ public sealed class AdmittedStructuredQueryGeneratorTests
         var error = await Assert.ThrowsAsync<AiAdmissionRejectedException>(() => setup.Consumer(address).TranslateAsync("devices", CancellationToken.None));
         Assert.Equal(Rejection.AdmissionUnavailable, error.Reason); Assert.Null(error.RetryAfterSeconds);
         Assert.Null(error.InnerException); Assert.Equal("AI admission was rejected.", error.Message);
+        Assert.Empty(setup.Provider.Calls); Assert.Equal(0, setup.Count()); Assert.False(File.Exists(setup.Path + ".lock"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnverifiedMarker_RejectsBeforeAnyAdmissionEvenWithValidConnection(bool unavailable)
+    {
+        await using var setup = new Setup();
+        var consumer = setup.Consumer(configure: context =>
+            context.Features.Set<AiClientIdentity>(unavailable ? AiClientIdentity.Unavailable : null));
+        var error = await Assert.ThrowsAsync<AiAdmissionRejectedException>(() => consumer.TranslateAsync("devices", CancellationToken.None));
+        Assert.Equal(Rejection.AdmissionUnavailable, error.Reason); Assert.Null(error.RetryAfterSeconds);
+        Assert.Empty(setup.Provider.Calls); Assert.Equal(0, setup.Count()); Assert.False(File.Exists(setup.Path + ".lock"));
+        // Identity rejection must not consume a window token or leave a concurrency lease behind.
+        for (int index = 0; index < 5; index++) await setup.Consumer().TranslateAsync("devices", CancellationToken.None);
+        Assert.Equal(5, setup.Count()); Assert.Equal(5, setup.Provider.Calls.Count);
+    }
+
+    [Fact]
+    public async Task VerifiedSnapshot_RemainsAuthoritativeAfterConnectionAndHeadersChange()
+    {
+        await using var setup = new Setup();
+        for (int index = 1; index <= 6; index++)
+        {
+            var consumer = setup.Consumer(configure: context =>
+            {
+                context.Connection.RemoteIpAddress = IPAddress.Parse($"198.51.100.{index}");
+                context.Request.Headers["X-Forwarded-For"] = $"203.0.113.{index}";
+            });
+            if (index <= 5) await consumer.TranslateAsync("devices", CancellationToken.None);
+            else
+            {
+                var error = await Assert.ThrowsAsync<AiAdmissionRejectedException>(() => consumer.TranslateAsync("devices", CancellationToken.None));
+                Assert.Equal(Rejection.RateLimited, error.Reason);
+            }
+        }
+        Assert.Equal(5, setup.Count()); Assert.Equal(5, setup.Provider.Calls.Count);
+    }
+
+    [Fact]
+    public async Task CancelledCaller_WithMissingMarker_PreservesCancellationBeforeAdmission()
+    {
+        await using var setup = new Setup();
+        using var abort = new CancellationTokenSource(); abort.Cancel();
+        var consumer = setup.Consumer(configure: context => context.Features.Set<AiClientIdentity>(null));
+        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => consumer.TranslateAsync("devices", abort.Token));
+        Assert.Equal(abort.Token, error.CancellationToken);
         Assert.Empty(setup.Provider.Calls); Assert.Equal(0, setup.Count()); Assert.False(File.Exists(setup.Path + ".lock"));
     }
 
@@ -267,12 +315,17 @@ public sealed class AdmittedStructuredQueryGeneratorTests
             if (seed) File.WriteAllText(Path, JsonSerializer.Serialize(new { version = 1, day = "2026-10-18", count }));
             Budget = new(Path, Clock);
         }
-        /// <summary>Composes the real validator before admission with an actual context address; spoofed headers are deliberately ignored.</summary>
-        internal TranslateDeviceQuery Consumer(string? address = "192.0.2.1")
+        /// <summary>Composes the real validator with explicitly synthetic ingress metadata; this is not real transport verification.</summary>
+        /// <param name="address">Controlled test peer copied into both connection metadata and the owned identity feature.</param>
+        /// <param name="configure">Optional mutation after capture, allowing missing-marker and later-rewrite regressions.</param>
+        /// <returns>The Application consumer over real local admission controls and the fake provider.</returns>
+        internal TranslateDeviceQuery Consumer(string? address = "192.0.2.1", Action<DefaultHttpContext>? configure = null)
         {
             var context = new DefaultHttpContext();
             context.Connection.RemoteIpAddress = address is null ? null : IPAddress.Parse(address);
+            context.Features.Set(AiClientIdentity.Capture(context.Connection.RemoteIpAddress));
             context.Request.Headers["X-Forwarded-For"] = "198.51.100.42";
+            configure?.Invoke(context);
             return new(new AdmittedStructuredQueryGenerator(Provider, Policy, Budget, context, Clock), Vocabulary);
         }
         /// <summary>Drains are the test's responsibility before disposal; verifies the resolved unique temporary target before recursive deletion.</summary>

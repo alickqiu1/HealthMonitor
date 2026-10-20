@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Net;
 using System.Collections.Concurrent;
+using HealthMonitor.Api.AiQueries;
 using HealthMonitor.Api.Composition;
 using HealthMonitor.Api.Controllers;
 using HealthMonitor.Application.Device;
@@ -172,7 +173,14 @@ internal sealed class ReadApiTestHost : IAsyncDisposable
                         try
                         {
                             // Keep the override inside completion tracking so even a faulty test callback cannot strand a request.
-                            if (transportAddress is not null) context.Connection.RemoteIpAddress = transportAddress();
+                            if (transportAddress is not null)
+                            {
+                                var peer = transportAddress();
+                                context.Connection.RemoteIpAddress = peer;
+                                // Only the explicitly selected test transport seam supplies synthetic ingress identity.
+                                // TestServer has no real socket capture; headers and its default connection never establish trust.
+                                context.Features.Set(AiClientIdentity.Capture(peer));
+                            }
                             await next();
                         }
                         finally { done.TrySetResult(); }
