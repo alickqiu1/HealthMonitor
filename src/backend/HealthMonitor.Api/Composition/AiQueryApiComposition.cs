@@ -7,31 +7,53 @@ using Microsoft.AspNetCore.Mvc.Controllers;
 
 namespace HealthMonitor.Api.Composition;
 
-/// <summary>Registers the AI HTTP contract while keeping production routing explicitly disabled.</summary>
-/// <remarks>The temporary startup gate must be reviewed when provider transport and all admission controls exist.
-/// Contract tests activate the controller only in their isolated host; this is not enabled production behavior.</remarks>
+/// <summary>Composes optional AI routes, trusted ingress and one lazily owned admitted runtime.</summary>
+/// <remarks>AI is disabled by default. Enabling requires validated installation settings and separately provisioned
+/// private budget storage; registration neither bootstraps storage nor verifies provider access.</remarks>
 internal static class AiQueryApiComposition
 {
     internal const string CorsPolicyName = "AiTranslation";
 
-    /// <summary>Validates the disabled leaf flag and registers lazy Application composition without a generator.</summary>
+    /// <summary>Captures enablement once and shares the immutable snapshot across optional AI components.</summary>
     /// <param name="services">API services with exact-origin read CORS already registered.</param>
-    /// <param name="configuration">Only the nonsecret AiQueries:Enabled flag is inspected.</param>
+    /// <param name="configuration">Installation settings; disabled composition reads only enablement metadata.</param>
+    /// <param name="environment">Actual host paths, required only when enabled.</param>
     /// <returns>The same collection.</returns>
     /// <exception cref="ArgumentNullException">A dependency is null.</exception>
-    /// <exception cref="InvalidOperationException">The flag is malformed or attempts premature enablement.</exception>
-    internal static IServiceCollection AddAiQueryApi(this IServiceCollection services, IConfiguration configuration)
+    /// <exception cref="InvalidOperationException">Enablement or active installation settings are invalid.</exception>
+    internal static IServiceCollection AddAiQueryApi(this IServiceCollection services, IConfiguration configuration, IWebHostEnvironment? environment = null) =>
+        AddAiQueryApiCore(services, configuration, environment, null);
+
+    /// <summary>Supplies a controlled disposable port for isolated effective-host acceptance, never public configuration.</summary>
+    /// <param name="services">Services with read JSON/error contracts and exact-origin CORS.</param>
+    /// <param name="configuration">Explicit installation configuration; no default providers are added here.</param>
+    /// <param name="environment">Actual host paths used by enabled binding.</param>
+    /// <param name="createProvider">Controlled factory whose returned disposable port transfers to the runtime owner.</param>
+    /// <returns>The same services with conditional routes and lazy ownership.</returns>
+    internal static IServiceCollection AddAiQueryApi(this IServiceCollection services, IConfiguration configuration,
+        IWebHostEnvironment environment, Func<AiQueryOptions, IStructuredQueryGenerator> createProvider)
+    {
+        ArgumentNullException.ThrowIfNull(createProvider);
+        return AddAiQueryApiCore(services, configuration, environment, createProvider);
+    }
+
+    /// <summary>Keeps routing and runtime/ingress settings consistent across configuration reloads.</summary>
+    private static IServiceCollection AddAiQueryApiCore(IServiceCollection services, IConfiguration configuration,
+        IWebHostEnvironment? environment, Func<AiQueryOptions, IStructuredQueryGenerator>? createProvider)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-        // Keep premature activation ahead of active option/credential binding until every admission gate is composed.
-        if (AiQueryOptions.ReadEnabled(configuration))
-            throw new InvalidOperationException("AiQueries:Enabled cannot be enabled until provider transport and all admission controls are implemented.");
-        // A second flag read could observe a reload and bind credentials after the disabled guard passed.
-        services.AddSingleton(AiQueryOptions.Disabled);
+        // Never reread the flag: a reload must not turn disabled discovery into credential binding.
+        var snapshot = AiQueryOptions.ReadEnabled(configuration)
+            ? AiQueryOptions.BindEnabled(configuration, environment) : AiQueryOptions.Disabled;
+        services.AddSingleton(snapshot);
         services.AddAiTrustedIngress(configuration);
-        services.AddControllers().ConfigureApplicationPartManager(manager =>
-            manager.FeatureProviders.Add(new AiQueryControllerFeatureProvider()));
+        var mvc = services.AddControllers();
+        if (!snapshot.Enabled)
+            mvc.ConfigureApplicationPartManager(manager =>
+                manager.FeatureProviders.Add(new AiQueryControllerFeatureProvider()));
+        else if (createProvider is null) services.AddAiQueryRuntime(snapshot);
+        else services.AddAiQueryRuntime(snapshot, createProvider);
         services.AddScoped<AiQueryBodyLimitFilter>();
         services.AddSingleton(_ => new QueryVocabulary(FixedDeviceCatalog.Devices.Select(d => d.SiteCode),
             FixedDeviceCatalog.Devices.Select(d => d.DeviceType)));

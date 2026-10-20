@@ -4,7 +4,7 @@ using HealthMonitor.Application.AiQueries.Ports;
 namespace HealthMonitor.Api.AiQueries;
 
 /// <summary>Owns shared AI admission resources until every admitted operation has actually terminated.</summary>
-/// <remarks>Production composition does not yet register or activate this owner. Request contexts live only in returned request-scoped
+/// <remarks>Enabled production composition registers this owner lazily. Request contexts live only in returned request-scoped
 /// generators and active calls, never as singleton identity. Shutdown rejects new work atomically but preserves
 /// existing caller tokens. A bounded shutdown wait is not proof of cancellation, disposal, or stopped billing.
 /// Deferred cleanup retains ownership until drain; process exit can still terminate unfinished work and release OS resources.</remarks>

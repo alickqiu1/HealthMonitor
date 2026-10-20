@@ -23,7 +23,7 @@ public sealed class AiQueryContractTests
     private const string Canary = "private-ai-canary-42";
 
     [Fact]
-    public async Task Disabled_AbsentAndCannotEnable()
+    public async Task Disabled_AbsentAndIncompleteEnablementRejected()
     {
         await using var host = await AiQueryTestHost.StartAsync(false);
         using var response = await host.PostAsync(Payload(Canary));
@@ -32,6 +32,7 @@ public sealed class AiQueryContractTests
         Assert.DoesNotContain(actions, action => action.DisplayName?.Contains("AiDeviceQueriesController", StringComparison.Ordinal) == true);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             { ["AiQueries:Enabled"] = "true" }).Build();
+        // Enabled configuration without installation settings still fails; complete enabled hosts have separate acceptance.
         Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddAiQueryApi(configuration));
         Assert.Empty(host.Generation.Calls); NoStorage(host); SafeLogs(host);
         // An absent endpoint retains the existing generic 404 policy; no matched-AI no-store claim is made.

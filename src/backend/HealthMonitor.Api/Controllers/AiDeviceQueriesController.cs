@@ -10,7 +10,7 @@ namespace HealthMonitor.Api.Controllers;
 
 /// <summary>Translates one explicit submission without querying storage or applying the result.</summary>
 /// <param name="translate">Application's single-call translation boundary.</param>
-/// <remarks>Production discovery currently removes this controller until transport and admission controls are ready.</remarks>
+/// <remarks>Production discovery removes this controller while AI is disabled; enabled composition requires admitted generation.</remarks>
 [ApiController]
 [Route("api/v1/ai/device-queries")]
 [EnableCors(AiQueryApiComposition.CorsPolicyName)]

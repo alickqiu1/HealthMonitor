@@ -5,7 +5,7 @@ namespace HealthMonitor.Api.AiQueries;
 /// <summary>Captures validated installation settings without activating AI or touching operational storage.</summary>
 /// <remarks>This is deliberately not a record: generated diagnostic output must not print the retained key.
 /// Never serialize or log this object. Disabled binding reads only enablement and parent key metadata;
-/// enabled binding is reserved for controlled tests until safe production composition is completed.</remarks>
+/// enabled binding validates a captured installation snapshot without verifying operational credentials.</remarks>
 internal sealed class AiQueryOptions
 {
     /// <summary>Gets a disabled snapshot without rereading reloadable configuration or retaining any active settings.</summary>
@@ -53,7 +53,18 @@ internal sealed class AiQueryOptions
     /// ACLs, symlink targets or provisioning safety; those must be checked separately before activation.</remarks>
     internal static AiQueryOptions FromConfiguration(IConfiguration configuration, IWebHostEnvironment? environment = null)
     {
-        if (!ReadEnabled(configuration)) return Disabled;
+        return ReadEnabled(configuration) ? BindEnabled(configuration, environment) : Disabled;
+    }
+
+    /// <summary>Binds active leaves after the caller has captured enablement exactly once.</summary>
+    /// <param name="configuration">Known active settings; enablement is not reread.</param>
+    /// <param name="environment">Actual host paths for lexical private-counter location validation.</param>
+    /// <returns>An immutable enabled snapshot without allocating operational resources.</returns>
+    /// <remarks>The caller owns the enablement decision. Separating binding prevents a reload from changing
+    /// that decision between route selection, ingress registration and runtime composition.</remarks>
+    internal static AiQueryOptions BindEnabled(IConfiguration configuration, IWebHostEnvironment? environment)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
         var root = configuration.GetSection("AiQueries");
         var limits = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

@@ -9,10 +9,12 @@ using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.FileProviders;
 
 namespace HealthMonitor.UnitTests.AiQueries;
 
-/// <summary>Verifies the temporary production gate without enabling a host, loading secrets, or registering a provider.</summary>
+/// <summary>Verifies conditional AI discovery and immutable configuration without starting a host or provider.</summary>
 public sealed class AiQueryApiRegistrationTests
 {
     [Theory]
@@ -45,14 +47,12 @@ public sealed class AiQueryApiRegistrationTests
     }
 
     [Theory]
-    [InlineData("true")]
-    [InlineData("TRUE")]
     [InlineData("private-config-canary")]
     [InlineData("")]
     [InlineData(" false ")]
     [InlineData("0")]
     [InlineData(null)]
-    public void ExplicitInvalidOrPrematureEnablement_FailsWithoutEchoingTheValue(string? flag)
+    public void ExplicitInvalidEnablement_FailsWithoutEchoingTheValue(string? flag)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?> { ["AiQueries:Enabled"] = flag }).Build();
@@ -74,15 +74,14 @@ public sealed class AiQueryApiRegistrationTests
         Assert.DoesNotContain("private-config-canary", error.Message);
         Assert.DoesNotContain("not-read-by-this-composition", error.Message);
     }
-    /// <summary>Premature production enablement must fail before looking up active provider or counter settings.</summary>
+    /// <summary>Active provider validation must reject unsupported profiles without exposing values.</summary>
     [Fact]
-    public void EnabledGate_PrecedesActiveProviderAndCredentialValidation()
+    public void Enabled_InvalidProvider_IsSanitized()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         { ["AiQueries:Enabled"] = "true", ["AiQueries:Provider"] = "private-config-canary", ["AiQueries:ApiKey"] = "not-a-valid-key value" }).Build();
         var error = Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddAiQueryApi(configuration));
-        Assert.Contains("AiQueries:Enabled", error.Message);
-        Assert.Contains("cannot be enabled", error.Message);
+        Assert.Contains("AiQueries:Provider", error.Message);
         Assert.DoesNotContain("private-config-canary", error.ToString());
         Assert.DoesNotContain("not-a-valid-key", error.ToString());
     }
@@ -99,6 +98,55 @@ public sealed class AiQueryApiRegistrationTests
         Assert.Null(provider.GetRequiredService<AiQueryOptions>().ApiKey);
         Assert.Null(provider.GetService<IStructuredQueryGenerator>());
         Assert.Equal(1, guarded.EnabledReads); Assert.Equal(0, guarded.SensitiveReads);
+    }
+
+    /// <summary>Enabled discovery uses the validated profile without eagerly creating providers or opening counter storage.</summary>
+    [Theory]
+    [InlineData("Groq")]
+    [InlineData("OpenAI")]
+    public async Task Enabled_UsesOneSnapshotAndExposesControllerLazily(string profile)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "HealthMonitor-unused-" + Guid.NewGuid().ToString("N"));
+        using var configuration = new ConfigurationRoot([new ActiveReloadProvider(root, profile)]);
+        var source = (ActiveReloadProvider)configuration.Providers.Single();
+        var services = new ServiceCollection();
+        services.AddLogging(); services.AddReadApi(); services.AddReadCors(configuration);
+        int factories = 0;
+        services.AddAiQueryApi(configuration, new Paths(root), _ => { factories++; throw new InvalidOperationException("Not requested."); });
+        await using var provider = services.BuildServiceProvider();
+        var snapshot = provider.GetRequiredService<AiQueryOptions>();
+        Assert.True(snapshot.Enabled); Assert.Equal(profile, snapshot.Profile!.Name);
+        var feature = new ControllerFeature(); provider.GetRequiredService<ApplicationPartManager>().PopulateFeature(feature);
+        Assert.Contains(feature.Controllers, controller => controller.AsType() == typeof(AiDeviceQueriesController));
+        Assert.Equal(1, source.EnabledReads); Assert.Equal(0, factories); Assert.False(Directory.Exists(root));
+    }
+
+    /// <summary>Changes true to false on a second read, detecting accidental rebinding of the captured activation decision.</summary>
+    private sealed class ActiveReloadProvider : ConfigurationProvider
+    {
+        internal int EnabledReads { get; private set; }
+        internal ActiveReloadProvider(string root, string profile)
+        {
+            Data["AiQueries:Enabled"] = "true"; Data["AiQueries:Provider"] = profile;
+            Data["AiQueries:ApiKey"] = "synthetic-key"; Data["AiQueries:BudgetCounterPath"] = Path.Combine(root, "counter.json");
+        }
+        public override bool TryGet(string key, out string? value)
+        {
+            if (key.Equals("AiQueries:Enabled", StringComparison.OrdinalIgnoreCase))
+            { value = ++EnabledReads == 1 ? "true" : "false"; return true; }
+            return base.TryGet(key, out value);
+        }
+    }
+
+    /// <summary>Supplies lexical host paths only; no filesystem or operational configuration is loaded.</summary>
+    private sealed class Paths(string root) : IWebHostEnvironment
+    {
+        public string ContentRootPath { get; set; } = Path.Combine(root, "host");
+        public string WebRootPath { get; set; } = Path.Combine(root, "host", "wwwroot");
+        public string EnvironmentName { get; set; } = "Testing";
+        public string ApplicationName { get; set; } = "ControlledAi";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     /// <summary>Changes enablement on a second lookup and fails any active-setting value read.</summary>

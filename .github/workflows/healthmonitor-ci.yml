@@ -219,6 +219,23 @@ jobs:
         shell: pwsh
         run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/ai-ingress-host/ai-ingress-host.trx -Group AiIngressHost
 
+      # Optional real MVC composition with synthetic credentials and fake providers; no Program/database/model calls.
+      - name: Run database-free AI API effective host tests
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/HealthMonitor.IntegrationTests/HealthMonitor.IntegrationTests.csproj \
+            --configuration Release --no-build --no-restore \
+            --blame-hang-timeout 3m --blame-hang-dump-type none \
+            --filter "FullyQualifiedName~HealthMonitor.IntegrationTests.Api.AiQueryEffectiveHostTests" \
+            --logger "trx;LogFileName=ai-api-host.trx" \
+            --results-directory artifacts/test-results/ai-api-host
+
+      - name: Verify AI API effective host execution
+        shell: pwsh
+        run: ./scripts/Verify-IntegrationTestResults.ps1 -Path artifacts/test-results/ai-api-host/ai-api-host.trx -Group AiApiHost
+
       - name: Restore .NET tools
         run: dotnet tool restore
 

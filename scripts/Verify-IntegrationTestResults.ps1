@@ -17,7 +17,7 @@ Reviewed inventory to require. Update inventories deliberately when tests change
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract', 'AiIngressHost')][string]$Group
+    [Parameter(Mandatory)][ValidateSet('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract', 'AiIngressHost', 'AiApiHost')][string]$Group
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -94,7 +94,7 @@ $inventories = @{
     AiContract = @{
         Class = 'HealthMonitor.IntegrationTests.Api.AiQueryContractTests'
         Methods = @{
-            Disabled_AbsentAndCannotEnable = @('')
+            Disabled_AbsentAndIncompleteEnablementRejected = @('')
             Ready_CanonicalWireAndZeroStorage = @('')
             ClarificationAndUnsupported_FixedWire = @('')
             InvalidPromptAndQuery_NoGeneration = @('')
@@ -113,6 +113,19 @@ $inventories = @{
             Admission_ProviderFailuresRemainChargedWithoutRetry = @('')
             Admission_RestartPreservesCounter = @('')
             Admission_ReadyThenGet_DoesNotRegenerate = @('')
+        }
+    }
+    AiApiHost = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.AiQueryEffectiveHostTests'
+        Methods = @{
+            Disabled_AbsentRoute_NoActiveSettingReads = @('')
+            EnabledProfiles_ValidatedPreview_NoStoreAndSingleCharge = @('')
+            InvalidRequests_NoAdmissionOrProvider = @('')
+            MissingOrCorruptBudget_FailsClosedWithoutBootstrap = @('')
+            EffectiveClientLimit_UsesTrustedSnapshot = @('')
+            Shutdown_DrainsUncooperativeRequestAndRetainsOwnership = @('')
+            InvalidConfiguration_RejectsBeforeBinding = @('')
+            ProviderFailures_AreSafeChargedAndDoNotRetry = @('')
         }
     }
     AiIngressHost = @{

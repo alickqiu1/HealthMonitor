@@ -80,7 +80,20 @@ $fixtures = @{
     }
     AiContract = @{
         Class = 'HealthMonitor.IntegrationTests.Api.AiQueryContractTests'
-        Cases = @('Disabled_AbsentAndCannotEnable', 'Ready_CanonicalWireAndZeroStorage', 'ClarificationAndUnsupported_FixedWire', 'InvalidPromptAndQuery_NoGeneration', 'StrictBodyShape_NoGeneration', 'BodyByteBounds_KnownStreamedUtf8', 'TypedAndUnexpectedFailures_SanitizedAndNoStore', 'Cancellation_ForwardsAndDrains', 'Cors_PostOnlyExactOrigins', 'SingleSubmission_GeneratesOnceAndSubsequentGetDoesNotRegenerate', 'Admission_InvalidRequests_DoNotConsumeBudget', 'Admission_ClientLimit_IgnoresSpoofedForwardingHeaders', 'Admission_GlobalLimit_UsesTrustedConnectionIdentity', 'Admission_Concurrency_DoesNotQueueOrReleaseOnClientAbort', 'Admission_DailyExhaustion_HasUtcRetryAndNoProviderCall', 'Admission_MissingOrCorruptCounter_FailsClosed', 'Admission_ProviderFailuresRemainChargedWithoutRetry', 'Admission_RestartPreservesCounter', 'Admission_ReadyThenGet_DoesNotRegenerate')
+        Cases = @('Disabled_AbsentAndIncompleteEnablementRejected', 'Ready_CanonicalWireAndZeroStorage', 'ClarificationAndUnsupported_FixedWire', 'InvalidPromptAndQuery_NoGeneration', 'StrictBodyShape_NoGeneration', 'BodyByteBounds_KnownStreamedUtf8', 'TypedAndUnexpectedFailures_SanitizedAndNoStore', 'Cancellation_ForwardsAndDrains', 'Cors_PostOnlyExactOrigins', 'SingleSubmission_GeneratesOnceAndSubsequentGetDoesNotRegenerate', 'Admission_InvalidRequests_DoNotConsumeBudget', 'Admission_ClientLimit_IgnoresSpoofedForwardingHeaders', 'Admission_GlobalLimit_UsesTrustedConnectionIdentity', 'Admission_Concurrency_DoesNotQueueOrReleaseOnClientAbort', 'Admission_DailyExhaustion_HasUtcRetryAndNoProviderCall', 'Admission_MissingOrCorruptCounter_FailsClosed', 'Admission_ProviderFailuresRemainChargedWithoutRetry', 'Admission_RestartPreservesCounter', 'Admission_ReadyThenGet_DoesNotRegenerate')
+    }
+    AiApiHost = @{
+        Class = 'HealthMonitor.IntegrationTests.Api.AiQueryEffectiveHostTests'
+        Cases = @(
+            'Disabled_AbsentRoute_NoActiveSettingReads',
+            'EnabledProfiles_ValidatedPreview_NoStoreAndSingleCharge',
+            'InvalidRequests_NoAdmissionOrProvider',
+            'MissingOrCorruptBudget_FailsClosedWithoutBootstrap',
+            'EffectiveClientLimit_UsesTrustedSnapshot',
+            'Shutdown_DrainsUncooperativeRequestAndRetainsOwnership',
+            'InvalidConfiguration_RejectsBeforeBinding',
+            'ProviderFailures_AreSafeChargedAndDoNotRetry'
+        )
     }
     AiIngressHost = @{
         Class = 'HealthMonitor.IntegrationTests.Api.AiIngressEffectiveHostTests'
@@ -202,9 +215,24 @@ function Assert-Report([string]$Label, [xml]$Report, [string]$Group, [bool]$Shou
 }
 
 try {
-    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract', 'AiIngressHost')) {
+    foreach ($group in @('Receipts', 'Catalog', 'Provisioning', 'Ingestion', 'Locks', 'Concurrency', 'Retention', 'HealthQueries', 'History', 'Contract', 'ReadApi', 'SimulationContract', 'SimulationDatabase', 'SimulationHost', 'AiContract', 'AiIngressHost', 'AiApiHost')) {
         Assert-Report "valid $group" (New-SyntheticReport $group) $group $true
     }
+    # Effective MVC acceptance is a separate exact inventory, not a replacement for component ingress proof.
+    foreach ($outcome in @('Failed', 'NotExecuted', 'Aborted')) {
+        $doc = New-SyntheticReport 'AiApiHost'
+        $doc.DocumentElement.ChildNodes[0].FirstChild.SetAttribute('outcome', $outcome)
+        Assert-Report "AI MVC $outcome" $doc 'AiApiHost' $false
+    }
+    $doc = New-SyntheticReport 'AiApiHost'
+    [void]$doc.DocumentElement.ChildNodes[0].RemoveChild($doc.DocumentElement.ChildNodes[0].FirstChild)
+    [void]$doc.DocumentElement.ChildNodes[1].RemoveChild($doc.DocumentElement.ChildNodes[1].FirstChild)
+    foreach ($key in @('total', 'executed', 'passed')) { $doc.DocumentElement.ChildNodes[2].FirstChild.SetAttribute($key, '7') }
+    Assert-Report 'AI MVC missing case with consistent counters' $doc 'AiApiHost' $false
+    $doc = New-SyntheticReport 'AiApiHost'
+    $doc.DocumentElement.ChildNodes[1].ChildNodes[1].FirstChild.SetAttribute('name', $fixtures.AiApiHost.Cases[0])
+    $doc.DocumentElement.ChildNodes[1].ChildNodes[1].SetAttribute('name', $fixtures.AiApiHost.Class + '.' + $fixtures.AiApiHost.Cases[0])
+    Assert-Report 'AI MVC duplicate method' $doc 'AiApiHost' $false
     # The new real-connection inventory must fail even when synthetic report counters look consistent.
     foreach ($outcome in @('Failed', 'NotExecuted')) {
         $doc = New-SyntheticReport 'AiIngressHost'

@@ -116,7 +116,7 @@ builder.Services.AddReadApi();
 builder.Services.AddReadCors(builder.Configuration);
 builder.Services.AddOperationalProbes();
 builder.Services.AddSimulationApi(builder.Configuration, builder.Environment.EnvironmentName);
-builder.Services.AddAiQueryApi(builder.Configuration);
+builder.Services.AddAiQueryApi(builder.Configuration, builder.Environment);
 
 // Register native ASP.NET Core OpenAPI document generation.
 builder.Services.AddOpenApi();
