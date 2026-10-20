@@ -1,8 +1,8 @@
 # HealthMonitor
 
-HealthMonitor monitors a fictional infrastructure fleet using device registrations, simulated telemetry, health assessments and incident history. Its intended dashboard helps users find unhealthy devices and inspect their recent measurements and incidents.
+HealthMonitor monitors a fictional infrastructure fleet using device registrations, simulated telemetry, health assessments and incident history. Its dashboard helps users find unhealthy devices and inspect their recent measurements and incidents.
 
-**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes fleet metrics and a server-paged device grid with refresh and failure states. Global name/asset-tag search, filters, server-side sorting and a device details panel are implemented. The AI interface remains a future enhancement. Verification evidence and remaining limits are recorded in the progress document. AI translation is disabled in production composition.
+**Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes fleet metrics and a server-paged device grid with refresh and failure states. Global name/asset-tag search, filters, server-side sorting and a device details panel are implemented. The optional AI interface previews validated filters before an explicit Apply; it is implemented and disabled by default. One live Groq HTTP scenario and five owner-provided browser screenshots supplement automated tests. See the [verification closeout](docs/development/VerificationCloseout.md) for evidence and remaining limits.
 
 ## Functionality
 
@@ -14,7 +14,7 @@ HealthMonitor monitors a fictional infrastructure fleet using device registratio
 - A device details panel with registration/health facts, up to 10 recent measurements from the server's trailing 24-hour window, and up to 10 retained incidents across lifecycle states. Each section has independent refresh, error and stale-data handling; the previews do not represent complete lifetime history.
 - Atomic telemetry ingestion with idempotency, incident lifecycle processing and concurrency safeguards.
 - An optional telemetry producer, retention processing and a separately controlled local simulation API.
-- A provider-neutral AI query contract, strict proposal validation and bounded Groq/OpenAI transports. Local admission controls have automated coverage, but remaining configuration, operational controls and activation are incomplete. No live model evaluation is claimed.
+- A provider-neutral AI query contract, strict proposal validation and bounded Groq/OpenAI transports. Optional backend composition, local admission controls and the preview/Apply interface are implemented and tested. Hosted operational acceptance and broad model evaluation remain open.
 
 All inventory and telemetry are synthetic. This application is not connected to real infrastructure and should not be used for confidential operational data without a separately designed access policy.
 
@@ -37,6 +37,10 @@ Device registration, current measurements and recent observation history:
 Retained open and resolved incidents in the scrolled details panel:
 
 ![Device incident history showing open and resolved connectivity, CPU and latency incidents](docs/screenshots/device-incidents.png)
+
+AI filter preview and applied Calgary / Server / Offline results (two matches):
+
+![AI filter preview showing Calgary offline servers and the two matching synthetic device rows](docs/screenshots/ai-filter-preview.png)
 
 ## Architecture
 
@@ -73,7 +77,7 @@ Enter a natural-language request, select **Preview filters**, review the normali
 
 GroqCloud with `openai/gpt-oss-20b` is the selected implementation target. Each installation must use its own provider account and backend-stored API credentials, independent of the project owner's account. Set `AiQueries:ApiKey` only in API user-secrets or hosting secrets; never publish its value. Never put provider credentials in browser code or Vite environment variables. Complete the installation settings and budget provisioning before setting `AiQueries:Enabled=true`; restart to capture the installation snapshot.
 
-Groq and OpenAI now have implemented, controlled-tested transports behind fixed supported profiles: Groq uses `openai/gpt-oss-20b`; OpenAI uses `gpt-5.4-mini-2026-03-17`. Backend composition selects one fixed profile per installation with `AiQueries:Provider` (`Groq` by default, or `OpenAI`). It validates one immutable snapshot using the actual host paths and lazily owns the admitted provider runtime. No live-provider result is claimed. Other models/providers are not automatically compatible: they need a reviewed profile/protocol or adapter behind the existing Application port. There is no automatic fallback or arbitrary browser-supplied endpoint, and changing only a key cannot select another provider. See the [provider decision and portability status](docs/development/AiProviderDecision.md#installation-credentials-and-provider-portability) and [implementation progress](docs/development/ImplementationProgress.md).
+Groq and OpenAI now have implemented, controlled-tested transports behind fixed supported profiles: Groq uses `openai/gpt-oss-20b`; OpenAI uses `gpt-5.4-mini-2026-03-17`. Backend composition selects one fixed profile per installation with `AiQueries:Provider` (`Groq` by default, or `OpenAI`). It validates one immutable snapshot using the actual host paths and lazily owns the admitted provider runtime. One explicitly authorized live Groq submission through application admission returned a valid proposal; an ordinary GET returned the two matching synthetic devices. This is bounded HTTP evidence, not broad model evaluation or live OpenAI verification. Other models/providers are not automatically compatible: they need a reviewed profile/protocol or adapter behind the existing Application port. There is no automatic fallback or arbitrary browser-supplied endpoint, and changing only a key cannot select another provider. See the [provider decision and portability status](docs/development/AiProviderDecision.md#installation-credentials-and-provider-portability) and [implementation progress](docs/development/ImplementationProgress.md).
 
 ### Initialize the AI budget counter once
 
@@ -114,11 +118,11 @@ dotnet run --project src/backend/HealthMonitor.Api --launch-profile https
 
 The checked-in HTTPS profile uses `https://localhost:7080`; a trusted local development certificate is required. Runtime credentials belong in user secrets or hosting secrets under `ConnectionStrings:HealthMonitorRuntime`. Maintenance credentials use a separate key and privilege boundary; never substitute them for the runtime account or commit credentials. API startup does not apply migrations or provision the catalog.
 
-The public read routes include `/api/v1/metrics/summary`, `/api/v1/devices`, and device detail/history routes. Simulation and the producer require explicit enablement. AI routing remains disabled; trusted ingress parsing alone does not configure forwarding or complete AI activation. Ordinary reads do not depend on AI availability.
+The public read routes include `/api/v1/metrics/summary`, `/api/v1/devices`, and device detail/history routes. Simulation and the producer require explicit enablement. AI translation requires explicit backend enablement, a supported provider account and a privately provisioned persistent budget counter as described above. It remains disabled by default; trusted-ingress settings require verification for the actual deployment topology. Ordinary reads do not depend on AI availability.
 
 ## Run a populated synthetic demo
 
-Use your own dedicated PostgreSQL database; downloaders do not share this project's database or credentials. PostgreSQL is required by the existing persistence implementation. For Supabase, use the project's direct connection or session pooler on port 5432, with certificate validation (`SSL Mode=VerifyFull`); the transaction pooler on port 6543 is unsupported.
+Use your own dedicated PostgreSQL database; downloaders do not share this project's database or credentials. PostgreSQL is required by the existing persistence implementation; CI uses PostgreSQL 17. SQLite and SQL Server are not supported. Other PostgreSQL installations need their own verified roles, schema setup and TLS configuration. For Supabase, use the project's direct connection or session pooler on port 5432, with certificate validation (`SSL Mode=VerifyFull`); the transaction pooler on port 6543 is unsupported.
 
 1. Follow the architecture plan's [database provisioning and privileges](docs/architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md#23-database-provisioning-and-privileges). Keep Device and Telemetry schemas private. The runtime account needs catalog SELECT and the specified Telemetry permissions, without catalog writes, ownership or schema creation privileges.
 2. Configure the separate runtime and maintenance connection strings in local .NET User Secrets for the API project, following the linked configuration procedure. Do not put them in `.env.local`, source files, command history or screenshots. Apply Device migrations before Telemetry migrations using the maintenance account. Skip already applied migrations; never reset an existing database to prepare a demo.
@@ -155,8 +159,10 @@ Work proceeds in small increments with local checks and GitHub Actions verificat
 
 [GitHub Actions](https://github.com/alickqiu1/HealthMonitor/actions/workflows/healthmonitor-ci.yml) builds and tests the backend, provisions disposable PostgreSQL, applies both schema migrations, and verifies required integration cases. Database tests must target the dedicated, verified `healthmonitor_test` database; never point them at development or production Supabase. A separate frontend job runs lint, client/component tests and the production build. Those tests use controlled responses; they do not prove a live browser-to-API journey or live AI behavior. Run `npm test`, `npm run lint` and `npm run build` from the frontend directory for the same local checks.
 
+- [Demo guide](docs/demo/DemoGuide.md): a 60–90 second walkthrough and recording checklist.
+- [Verification closeout](docs/development/VerificationCloseout.md): clean-clone results, evidence boundaries and release gates.
 - [Implementation progress](docs/development/ImplementationProgress.md): current milestone, approved roadmap, executed test evidence and known gaps.
 - [Technical Architecture Plan, Edition 1.5](docs/architecture/Enterprise%20Infrastructure%20Health%20Monitor%20Technical%20Architecture%20Plan.md): authoritative requirements, module boundaries, setup and operational procedures.
 - [AI provider decision](docs/development/AiProviderDecision.md): selected provider/model, rationale and remaining evaluation limits.
 
-The bounded synthetic-data demonstration, device details panel, startup walkthrough and actual screenshots are delivered. The owner reported that the populated output and details look correct and that Tab navigation works. Escape/focus-return behavior and specific narrow-screen layouts have not been manually confirmed; the progress document records these limits separately from automated coverage. Operational provider/deployment acceptance and a live browser-to-AI walkthrough remain open; resume it from the progress document rather than treating tested components as an enabled feature.
+The bounded synthetic-data demonstration, device details panel, startup walkthrough and actual screenshots are delivered. The owner reported that the populated output and details look correct and that Tab navigation works. Escape/focus-return behavior and specific narrow-screen layouts have not been manually confirmed; the progress document records these limits separately from automated coverage. Five owner-provided after-Apply screenshots were independently reviewed; these do not establish keyboard behavior, pre-Apply grid isolation or request counts. Hosted deployment acceptance remains open. The public-clone database-free rehearsal passed; a fresh-database bootstrap, recorded video and release tag have not been completed.
