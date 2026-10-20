@@ -11,6 +11,9 @@ namespace HealthMonitor.Api.AiQueries;
 /// </remarks>
 internal sealed class TrustedIngressOptions
 {
+    /// <summary>Gets an immutable no-trust snapshot without reading disabled ingress settings.</summary>
+    internal static TrustedIngressOptions Disabled { get; } = new(false, []);
+
     /// <summary>Whether a later composition may process forwarding from the explicitly listed proxies.</summary>
     internal bool Enabled { get; }
     /// <summary>The supported maximum forwarded hop count, fixed at one for this increment.</summary>

@@ -106,6 +106,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseReadApiErrors();
+app.UseAiTrustedIngress(builder.Configuration);
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseAiQueryNoStore();

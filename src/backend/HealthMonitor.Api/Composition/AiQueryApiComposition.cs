@@ -29,6 +29,7 @@ internal static class AiQueryApiComposition
             throw new InvalidOperationException("AiQueries:Enabled cannot be enabled until provider transport and all admission controls are implemented.");
         // A second flag read could observe a reload and bind credentials after the disabled guard passed.
         services.AddSingleton(AiQueryOptions.Disabled);
+        services.AddAiTrustedIngress(configuration);
         services.AddControllers().ConfigureApplicationPartManager(manager =>
             manager.FeatureProviders.Add(new AiQueryControllerFeatureProvider()));
         services.AddScoped<AiQueryBodyLimitFilter>();
