@@ -4,6 +4,16 @@ HealthMonitor monitors a fictional infrastructure fleet using device registratio
 
 **Current state:** the backend APIs and persistence foundations are implemented and tested. The React frontend includes fleet metrics and a server-paged device grid with refresh and failure states. Global name/asset-tag search, filters, server-side sorting and a device details panel are implemented. The optional AI interface previews validated filters before an explicit Apply; it is implemented and disabled by default. One live Groq HTTP scenario and five owner-provided browser screenshots supplement automated tests. See the [verification closeout](docs/development/VerificationCloseout.md) for evidence and remaining limits.
 
+Fleet overview with 24 devices and health totals:
+
+![Synthetic fleet overview showing 24 active devices, health totals and average latency](docs/screenshots/fleet-overview.png)
+
+## How this project was built with AI
+
+The owner wrote no application code; AI coding agents generated the implementation and tests. The owner helped organize the architecture plan, established the AI workflow during the first two development steps, then directed separate development and read-only reviewer chats and performed manual UI testing.
+
+See [AI-assisted development](#ai-assisted-development) for the fuller attribution, review process and its limits.
+
 ## Functionality
 
 - Read-only fleet metrics and device grid, with page-size choices, previous/next controls, page totals and explicit stale-data warnings.
@@ -21,10 +31,6 @@ All inventory and telemetry are synthetic. This application is not connected to 
 ## Screenshots
 
 Original browser captures provided by the owner from the running local application, using synthetic data. These were captured at different moments; measurements and incident states can differ between images.
-
-Fleet overview with 24 devices and health totals:
-
-![Synthetic fleet overview showing 24 active devices, health totals and average latency](docs/screenshots/fleet-overview.png)
 
 Paged inventory with measurements and per-device details:
 
